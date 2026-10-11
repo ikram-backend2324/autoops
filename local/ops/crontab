@@ -1,0 +1,4 @@
+# min hour dom mon dow  (TZ=Asia/Tashkent)
+0 3 * * * /opt/autoops/scripts/run-with-env.sh /opt/autoops/scripts/backup/backup.sh
+0 4 * * 0 /opt/autoops/scripts/run-with-env.sh /opt/autoops/scripts/backup/verify_restore.sh
+0 9 * * 1 /opt/autoops/scripts/run-with-env.sh python3 /opt/autoops/scripts/report/weekly_report.py

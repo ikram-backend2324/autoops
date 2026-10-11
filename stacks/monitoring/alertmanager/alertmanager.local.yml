@@ -1,0 +1,32 @@
+# Used automatically when TELEGRAM_BOT_TOKEN is empty (laptop demo, CI):
+# same grouping/inhibition as production, but every alert goes only to notify-relay,
+# which prints it -> `docker compose logs -f notify-relay`.
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: relay
+  group_by: [alertname, server, app]
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 4h
+
+inhibit_rules:
+  - source_matchers: ['severity="critical"']
+    target_matchers: ['severity="warning"']
+    equal: [server, instance, mountpoint]
+  - source_matchers: ['alertname="DiskSpaceCritical"']
+    target_matchers: ['alertname="DiskSpaceWarning"']
+    equal: [server, mountpoint]
+  - source_matchers: ['alertname=~"PostgresDown|RedisDown"']
+    target_matchers: ['alertname="TargetDown"']
+    equal: [server, app]
+  - source_matchers: ['alertname="SiteDown"']
+    target_matchers: ['alertname="AppHigh5xxRate"']
+    equal: [server]
+
+receivers:
+  - name: relay
+    webhook_configs:
+      - url: http://notify-relay:9095/alertmanager
+        send_resolved: true

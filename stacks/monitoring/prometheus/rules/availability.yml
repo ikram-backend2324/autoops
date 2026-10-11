@@ -1,0 +1,64 @@
+groups:
+  - name: availability
+    rules:
+      - alert: SiteDown
+        expr: probe_success{job="blackbox-http"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Сайт недоступен: {{ $labels.instance }}"
+          description: "Проверка {{ $labels.instance }} извне проваливается больше 1 минуты (код ответа или /health/ не ok)."
+          runbook: "Откройте URL в браузере; на сервере: docker ps, docker compose logs web --tail 100; проверьте Postgres/Redis (алерты ниже). Подробно: docs/PRODUCTION.md#sitedown"
+          dashboard: "d/autoops-availability"
+
+      - alert: SSLCertExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry{job="blackbox-http"} - time()) / 86400 < 14
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "SSL-сертификат {{ $labels.instance }} истекает через {{ $value | printf \"%.0f\" }} дн."
+          description: "Let's Encrypt должен был продлить сертификат автоматически за 30 дней до конца."
+          runbook: "docker logs traefik | grep -i acme; проверьте DNS A-запись и что порт 80 открыт (HTTP-01 challenge). docs/PRODUCTION.md#sslcertexpiringsoon"
+          dashboard: "d/autoops-availability"
+
+      - alert: SSLCertExpiryCritical
+        expr: (probe_ssl_earliest_cert_expiry{job="blackbox-http"} - time()) / 86400 < 3
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SSL-сертификат {{ $labels.instance }} истекает менее чем через 3 дня"
+          description: "Через несколько дней браузеры покажут ошибку безопасности."
+          runbook: "Срочно: docker logs traefik | grep -i acme, исправьте причину и перезапустите traefik. docs/PRODUCTION.md#sslcertexpiringsoon"
+          dashboard: "d/autoops-availability"
+
+      - alert: TargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus не может собрать метрики: {{ $labels.job }} ({{ $labels.instance }})"
+          description: "Цель недоступна больше 2 минут — мониторинг этой части системы ослеп."
+          runbook: "docker ps -a | grep exporter; docker logs ИМЯ_КОНТЕЙНЕРА. Проверьте, что контейнер в сети autoops. docs/PRODUCTION.md#targetdown"
+          dashboard: "d/autoops-server"
+
+      - alert: AppHigh5xxRate
+        expr: |
+          (
+            sum by (app) (rate(django_http_responses_total_by_status_total{status=~"5.."}[5m]))
+            /
+            sum by (app) (rate(django_http_responses_total_by_status_total[5m]))
+          ) > 0.05
+          and
+          sum by (app) (rate(django_http_responses_total_by_status_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Приложение {{ $labels.app }}: {{ $value | humanizePercentage }} ответов с ошибкой 5xx"
+          description: "Больше 5% запросов завершаются ошибкой сервера в течение 5 минут."
+          runbook: "Grafana → Логи: {app=\"{{ $labels.app }}\"} |= \"ERROR\"; был ли недавно деплой? Откат: make rollback APP={{ $labels.app }}. docs/PRODUCTION.md#apphigh5xxrate"
+          dashboard: "d/autoops-app"

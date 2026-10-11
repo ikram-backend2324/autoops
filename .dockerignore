@@ -1,0 +1,4 @@
+# Root build context is used only by local/watchdog and local/ops images.
+*
+!scripts/
+!local/ops/

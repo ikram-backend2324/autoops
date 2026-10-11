@@ -1,0 +1,54 @@
+groups:
+  - name: containers
+    rules:
+      - alert: ContainerCrashLoop
+        expr: changes(container_start_time_seconds{name!=""}[15m]) > 3
+        labels:
+          severity: critical
+        annotations:
+          summary: "Контейнер {{ $labels.name }} в цикле перезапусков"
+          description: "Перезапускался {{ $value }} раз за 15 минут — автовосстановление не помогает."
+          runbook: "docker logs {{ $labels.name }} --tail 200; docker inspect {{ $labels.name }} --format '{{`{{.State.OOMKilled}}`}}'. Частые причины: OOM, нет доступа к БД, битая конфигурация после деплоя. docs/PRODUCTION.md#containercrashloop"
+          dashboard: "d/autoops-containers"
+
+      - alert: ContainerRestarted
+        expr: changes(container_start_time_seconds{name!=""}[3m]) > 0
+        labels:
+          severity: info
+        annotations:
+          summary: "Контейнер {{ $labels.name }} был перезапущен"
+          description: "Docker или autoheal перезапустили контейнер; сервис восстановлен автоматически."
+          runbook: "Обычно действий не требуется. Если повторяется — docker logs {{ $labels.name }}. docs/PRODUCTION.md#containerrestarted"
+          dashboard: "d/autoops-containers"
+
+      - alert: ContainerUnhealthy
+        expr: autoops_container_healthy == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Контейнер {{ $labels.name }} в статусе unhealthy"
+          description: "Healthcheck проваливается больше минуты; autoheal должен был его перезапустить."
+          runbook: "docker inspect --format '{{`{{json .State.Health}}`}}' {{ $labels.name }}; docker logs autoheal --tail 50. docs/PRODUCTION.md#containerunhealthy"
+          dashboard: "d/autoops-containers"
+
+      - alert: WatchdogNotRunning
+        expr: time() - autoops_watchdog_last_run_timestamp_seconds > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Watchdog самовосстановления не запускался больше 5 минут"
+          description: "Без него не работают автоочистка диска и перезапуск стеков."
+          runbook: "systemctl status autoops-watchdog.timer; journalctl -u autoops-watchdog -n 50. docs/PRODUCTION.md#watchdognotrunning"
+          dashboard: "d/autoops-containers"
+
+      - alert: SelfHealGaveUp
+        expr: autoops_watchdog_gave_up > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Автовосстановление сдалось: {{ $labels.action }} — нужен человек"
+          description: "Одно и то же действие повторялось слишком часто за час и не помогло. Watchdog прекратил попытки."
+          runbook: "journalctl -u autoops-watchdog -n 100; устраните причину, затем: sudo rm /var/lib/autoops/watchdog-state.json. docs/PRODUCTION.md#selfhealgaveup"
+          dashboard: "d/autoops-containers"

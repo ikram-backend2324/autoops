@@ -1,0 +1,44 @@
+groups:
+  - name: backups
+    rules:
+      - alert: BackupTooOld
+        expr: time() - autoops_backup_last_success_timestamp_seconds > 26 * 3600
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Бэкап не выполнялся {{ $value | humanizeDuration }}"
+          description: "Последний успешный бэкап старше 26 часов — ежедневный бэкап пропущен."
+          runbook: "systemctl status autoops-backup.timer; journalctl -u autoops-backup -n 100; запустить вручную: sudo /opt/autoops/scripts/backup/backup.sh. docs/PRODUCTION.md#backuptooold"
+          dashboard: "d/autoops-backups"
+
+      - alert: BackupNeverSucceeded
+        expr: absent(autoops_backup_last_success_timestamp_seconds)
+        for: 26h
+        labels:
+          severity: critical
+        annotations:
+          summary: "На сервере нет ни одного успешного бэкапа"
+          description: "Метрика бэкапа отсутствует больше 26 часов после запуска мониторинга."
+          runbook: "Проверьте доступ к S3 и пароль restic: sudo /opt/autoops/scripts/backup/backup.sh. docs/PRODUCTION.md#backuptooold"
+          dashboard: "d/autoops-backups"
+
+      - alert: BackupFailed
+        expr: autoops_backup_last_run_success == 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Последний бэкап завершился ошибкой"
+          description: "Скрипт бэкапа упал; подробности в уведомлении и в журнале."
+          runbook: "journalctl -u autoops-backup -n 100. Частые причины: нет места, неверные ключи S3, блокировка restic (restic unlock). docs/PRODUCTION.md#backupfailed"
+          dashboard: "d/autoops-backups"
+
+      - alert: RestoreVerificationFailed
+        expr: autoops_restore_verify_success == 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Проверка восстановления бэкапа провалена ({{ $labels.app }})"
+          description: "Последний бэкап не удалось восстановить во временную базу — на него нельзя полагаться."
+          runbook: "sudo /opt/autoops/scripts/backup/verify_restore.sh и смотрите вывод; проверьте restic check. docs/PRODUCTION.md#restoreverificationfailed"
+          dashboard: "d/autoops-backups"

@@ -1,0 +1,89 @@
+# Production routing: every alert is logged by notify-relay, then sent to Telegram.
+# __TELEGRAM_CHAT_ID__ is substituted by entrypoint.sh; the bot token is read from a file.
+global:
+  resolve_timeout: 5m
+
+templates:
+  - /tmp/am/templates/*.tmpl
+
+time_intervals:
+  # Quiet hours for warnings (Asia/Tashkent). Critical alerts always ring.
+  - name: night
+    time_intervals:
+      - times:
+          - start_time: "23:00"
+            end_time: "24:00"
+          - start_time: "00:00"
+            end_time: "08:00"
+        location: Asia/Tashkent
+
+route:
+  receiver: telegram-critical
+  group_by: [alertname, server, app]
+  group_wait: 30s
+  group_interval: 2m
+  repeat_interval: 4h
+  routes:
+    # Audit trail of everything (also what the chaos demo reads).
+    - receiver: relay
+      matchers: []
+      continue: true
+      group_wait: 0s
+      group_interval: 30s
+    - receiver: telegram-critical
+      matchers: ['severity="critical"']
+      repeat_interval: 1h
+    - receiver: telegram-warning
+      matchers: ['severity="warning"']
+      mute_time_intervals: [night]
+    - receiver: telegram-info
+      matchers: ['severity="info"']
+      repeat_interval: 24h
+
+inhibit_rules:
+  # A critical alert hides the matching warning (e.g. disk 90% hides disk 80%).
+  - source_matchers: ['severity="critical"']
+    target_matchers: ['severity="warning"']
+    equal: [server, instance, mountpoint]
+  - source_matchers: ['alertname="DiskSpaceCritical"']
+    target_matchers: ['alertname="DiskSpaceWarning"']
+    equal: [server, mountpoint]
+  - source_matchers: ['alertname="SSLCertExpiryCritical"']
+    target_matchers: ['alertname="SSLCertExpiringSoon"']
+    equal: [server, instance]
+  # When the database is down, exporters/targets of that app being down is noise.
+  - source_matchers: ['alertname=~"PostgresDown|RedisDown"']
+    target_matchers: ['alertname="TargetDown"']
+    equal: [server, app]
+  # A down site produces 5xx; one alert is enough.
+  - source_matchers: ['alertname="SiteDown"']
+    target_matchers: ['alertname="AppHigh5xxRate"']
+    equal: [server]
+
+receivers:
+  - name: relay
+    webhook_configs:
+      - url: http://notify-relay:9095/alertmanager
+        send_resolved: true
+  - name: telegram-critical
+    telegram_configs:
+      - bot_token_file: /tmp/am/bot_token
+        chat_id: __TELEGRAM_CHAT_ID__
+        parse_mode: HTML
+        message: '{{ template "telegram.autoops.message" . }}'
+        send_resolved: true
+  - name: telegram-warning
+    telegram_configs:
+      - bot_token_file: /tmp/am/bot_token
+        chat_id: __TELEGRAM_CHAT_ID__
+        parse_mode: HTML
+        message: '{{ template "telegram.autoops.message" . }}'
+        send_resolved: true
+  - name: telegram-info
+    telegram_configs:
+      - bot_token_file: /tmp/am/bot_token
+        chat_id: __TELEGRAM_CHAT_ID__
+        parse_mode: HTML
+        disable_notifications: true
+        message: '{{ template "telegram.autoops.message" . }}'
+        send_resolved: false

@@ -1,0 +1,49 @@
+groups:
+  - name: databases
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL приложения {{ $labels.app }} недоступен"
+          description: "postgres-exporter не может подключиться к базе больше 30 секунд. Сайт, скорее всего, отдаёт ошибки."
+          runbook: "docker ps -a --filter label=autoops.app={{ $labels.app }}; docker logs ИМЯ_КОНТЕЙНЕРА_POSTGRES --tail 100. Watchdog попробует поднять стек сам. docs/PRODUCTION.md#postgresdown"
+          dashboard: "d/autoops-postgres"
+
+      - alert: PostgresTooManyConnections
+        expr: |
+          sum by (app) (pg_stat_activity_count)
+          /
+          max by (app) (pg_settings_max_connections) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL {{ $labels.app }}: занято {{ $value | humanizePercentage }} соединений"
+          description: "Скоро новые подключения начнут отклоняться."
+          runbook: "SELECT state, count(*) FROM pg_stat_activity GROUP BY 1; проверьте утечки соединений, CONN_MAX_AGE, число воркеров; рассмотрите pgbouncer. docs/PRODUCTION.md#postgrestoomanyconnections"
+          dashboard: "d/autoops-postgres"
+
+      - alert: PostgresLongRunningQuery
+        expr: max by (app) (pg_stat_activity_max_tx_duration{state="active"}) > 300
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL {{ $labels.app }}: запрос выполняется {{ $value | humanizeDuration }}"
+          description: "Долгие транзакции блокируют таблицы и мешают autovacuum."
+          runbook: "SELECT pid, now()-query_start, query FROM pg_stat_activity WHERE state='active' ORDER BY 2 DESC; при необходимости SELECT pg_cancel_backend(pid). docs/PRODUCTION.md#postgreslongrunningquery"
+          dashboard: "d/autoops-postgres"
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis приложения {{ $labels.app }} недоступен"
+          description: "Очереди Celery и кеш не работают."
+          runbook: "docker logs ИМЯ_КОНТЕЙНЕРА_REDIS --tail 100; проверьте память (maxmemory) и диск. docs/PRODUCTION.md#redisdown"
+          dashboard: "d/autoops-containers"

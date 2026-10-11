@@ -1,0 +1,22 @@
+# secrets / local state
+local/.env
+local/generated/
+ansible/inventory/hosts.yml
+ansible/inventory/group_vars/all/vault.yml
+ansible/inventory/host_vars/
+.vault_pass*
+*.retry
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+sample-app/db.sqlite3
+sample-app/staticfiles/
+sample-app/media/
+# editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

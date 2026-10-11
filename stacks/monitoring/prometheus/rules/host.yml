@@ -1,0 +1,71 @@
+groups:
+  - name: host
+    rules:
+      - alert: HighCPU
+        expr: 100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[2m]))) > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая загрузка CPU: {{ $value | printf \"%.0f\" }}%"
+          description: "Процессор загружен больше 85% уже 10 минут."
+          runbook: "docker stats --no-stream; top -o %CPU. Если это приложение — проверьте трафик и медленные запросы, при постоянной нагрузке нужен сервер мощнее. docs/PRODUCTION.md#highcpu"
+          dashboard: "d/autoops-server"
+
+      - alert: HighMemory
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Мало свободной памяти: занято {{ $value | printf \"%.0f\" }}%"
+          description: "Оперативная память занята больше чем на 90% уже 5 минут, возможен OOM-killer."
+          runbook: "docker stats --no-stream --format 'table {{`{{.Name}}\\t{{.MemUsage}}`}}'; проверьте утечки, снизьте лимиты/воркеры или увеличьте RAM. docs/PRODUCTION.md#highmemory"
+          dashboard: "d/autoops-server"
+
+      - alert: DiskSpaceWarning
+        expr: (1 - node_filesystem_avail_bytes{job="node",fstype!=""} / node_filesystem_size_bytes{job="node",fstype!=""}) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Диск {{ $labels.mountpoint }} заполнен на {{ $value | printf \"%.0f\" }}%"
+          description: "Свободного места меньше 20%. Watchdog начнёт автоочистку при 85%."
+          runbook: "sudo du -xh / --max-depth=2 | sort -h | tail; docker system df. docs/PRODUCTION.md#diskspace"
+          dashboard: "d/autoops-server"
+
+      - alert: DiskSpaceCritical
+        expr: (1 - node_filesystem_avail_bytes{job="node",fstype!=""} / node_filesystem_size_bytes{job="node",fstype!=""}) * 100 > 90
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Диск {{ $labels.mountpoint }} почти заполнен: {{ $value | printf \"%.0f\" }}%"
+          description: "Автоочистка не помогла или не успевает. При 100% остановится база данных."
+          runbook: "Срочно освободите место: docker system df, большие логи, старые бэкапы в /var/backups. docs/PRODUCTION.md#diskspace"
+          dashboard: "d/autoops-server"
+
+      - alert: DiskWillFillIn24h
+        expr: |
+          predict_linear(node_filesystem_avail_bytes{job="node",fstype!=""}[6h], 24 * 3600) < 0
+          and
+          node_filesystem_avail_bytes{job="node",fstype!=""} / node_filesystem_size_bytes{job="node",fstype!=""} < 0.4
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Диск {{ $labels.mountpoint }} заполнится в течение 24 часов"
+          description: "При текущей скорости роста свободное место закончится меньше чем за сутки."
+          runbook: "Найдите, что растёт: логи, медиа, бэкапы, Docker-образы. docs/PRODUCTION.md#diskspace"
+          dashboard: "d/autoops-server"
+
+      - alert: RebootRequired
+        expr: autoops_reboot_required == 1
+        for: 24h
+        labels:
+          severity: info
+        annotations:
+          summary: "Серверу нужна перезагрузка после обновлений безопасности"
+          description: "unattended-upgrades установил обновления ядра/библиотек больше суток назад."
+          runbook: "Запланируйте окно: sudo reboot (стеки поднимутся сами). docs/PRODUCTION.md#rebootrequired"
+          dashboard: "d/autoops-server"

@@ -1,0 +1,24 @@
+# Laptop-only changes to stacks/monitoring/compose.yml. Paths are relative to stacks/monitoring/.
+#
+# node-exporter: on Docker Desktop the "host" is a tiny VM whose disk usage means nothing,
+# so instead of the host root filesystem we watch a 300 MB tmpfs volume (/chaosdisk).
+# The chaos "fill disk" scenario fills exactly this volume, which makes the disk alerts
+# and the watchdog clean-up reproducible on any laptop without touching the real disk.
+services:
+  node-exporter:
+    pid: !reset null
+    command:
+      - --collector.textfile.directory=/textfile
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|etc|host|textfile)($$|/)
+    volumes: !override
+      - textfile:/textfile:ro
+      - chaosdisk:/chaosdisk:ro
+
+volumes:
+  textfile:
+  chaosdisk:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=300m

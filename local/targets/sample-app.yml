@@ -1,0 +1,13 @@
+# Laptop demo targets (on servers the Ansible app role writes these files).
+- targets: ["sample-web:8000"]
+  labels:
+    app: sample
+    component: web
+- targets: ["sample-postgres-exporter:9187"]
+  labels:
+    app: sample
+    component: postgres
+- targets: ["sample-redis-exporter:9121"]
+  labels:
+    app: sample
+    component: redis

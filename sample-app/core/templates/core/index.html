@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AutoOps sample app</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 3rem auto; padding: 0 1rem; color: #1d2433; }
+    code { background: #eef1f6; padding: .1rem .3rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>AutoOps sample app</h1>
+  <p>Version <code>{{ version }}</code>. Health: <a href="/health/">/health/</a>, metrics: <a href="/metrics">/metrics</a>.</p>
+  <h2>Latest notes</h2>
+  <ul>
+    {% for note in notes %}<li>{{ note.title }}</li>{% empty %}<li>No notes yet.</li>{% endfor %}
+  </ul>
+</body>
+</html>

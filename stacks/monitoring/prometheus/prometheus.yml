@@ -1,0 +1,73 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    # Prometheus 3 expands ${VAR} in external labels; set by compose.
+    server: ${SERVER_NAME}
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  - job_name: cadvisor
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["cadvisor:8080"]
+    metric_relabel_configs:
+      # Drop the per-cgroup noise without a container name.
+      - source_labels: [name]
+        regex: ""
+        action: drop
+
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+
+  - job_name: notify-relay
+    static_configs:
+      - targets: ["notify-relay:9095"]
+
+  # ---- per-application targets (files written by the Ansible "app" role) ----
+  # <app>-app.yml   : web /metrics, postgres-exporter, redis-exporter (labels: app, component)
+  - job_name: app
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/*-app.yml"]
+        refresh_interval: 30s
+    relabel_configs:
+      - source_labels: [component]
+        target_label: job
+        regex: (.+)
+        replacement: app-$1
+
+  # <app>-probe.yml : public URLs to check from the outside (HTTP status + TLS expiry)
+  - job_name: blackbox-http
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/*-probe.yml"]
+        refresh_interval: 30s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115

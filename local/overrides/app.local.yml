@@ -1,0 +1,18 @@
+# Laptop-only changes to stacks/app/compose.yml: build the sample app from source
+# and publish web on http://localhost:8088 (LOCAL_WEB_PORT). Paths are relative to stacks/app/.
+x-local-build: &local-build
+  build:
+    context: ../../sample-app
+    target: runtime
+    args:
+      GIT_SHA: local
+
+services:
+  migrate:
+    <<: *local-build
+  web:
+    <<: *local-build
+    ports:
+      - "127.0.0.1:${LOCAL_WEB_PORT:-8088}:8000"
+  worker:
+    <<: *local-build

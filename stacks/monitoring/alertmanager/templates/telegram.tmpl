@@ -1,0 +1,22 @@
+{{/* Telegram message (parse_mode HTML). Times are local: TZ=Asia/Tashkent in compose. */}}
+
+{{ define "autoops.icon" }}{{ if eq . "critical" }}🔴{{ else if eq . "warning" }}🟠{{ else }}🔵{{ end }}{{ end }}
+{{ define "autoops.level" }}{{ if eq . "critical" }}КРИТИЧНО{{ else if eq . "warning" }}ВНИМАНИЕ{{ else }}ИНФО{{ end }}{{ end }}
+
+{{ define "telegram.autoops.message" -}}
+{{ range .Alerts.Firing -}}
+{{ template "autoops.icon" .Labels.severity }} <b>{{ template "autoops.level" .Labels.severity }}: {{ .Annotations.summary }}</b>
+🖥 Сервер: <code>{{ .Labels.server }}</code>{{ if .Labels.app }} · приложение <code>{{ .Labels.app }}</code>{{ end }}
+📝 {{ .Annotations.description }}
+⏱ С {{ .StartsAt.Local.Format "02.01.2006 15:04:05" }}
+🛠 Что делать: {{ .Annotations.runbook }}
+{{ if .Annotations.dashboard }}📊 <a href="__GRAFANA_URL__/{{ .Annotations.dashboard }}">Открыть дашборд</a>{{ end }}
+
+{{ end -}}
+{{ range .Alerts.Resolved -}}
+✅ <b>РЕШЕНО: {{ .Annotations.summary }}</b>
+🖥 Сервер: <code>{{ .Labels.server }}</code>{{ if .Labels.app }} · приложение <code>{{ .Labels.app }}</code>{{ end }}
+⏱ {{ .StartsAt.Local.Format "15:04:05" }} → {{ .EndsAt.Local.Format "15:04:05 02.01.2006" }}
+
+{{ end -}}
+{{- end }}

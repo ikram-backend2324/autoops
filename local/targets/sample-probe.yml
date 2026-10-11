@@ -1,0 +1,4 @@
+# On a server this is the public HTTPS URL, e.g. https://app.example.uz/health/
+- targets: ["http://sample-web:8000/health/"]
+  labels:
+    app: sample

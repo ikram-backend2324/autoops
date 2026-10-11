@@ -1,0 +1,226 @@
+# AutoOps application stack (one Compose project per application).
+#
+# Fully parameterised through environment variables, so the same file serves:
+#   * every application on a server  -> /opt/autoops/apps/<APP_NAME>/.env (rendered by Ansible)
+#   * the laptop demo                -> local/env/app.env
+# The shared external network "autoops" connects apps to Traefik and Prometheus;
+# Postgres and Redis stay on the project's private default network.
+
+x-app-common: &app-common
+  image: ${APP_IMAGE:?set APP_IMAGE}:${APP_TAG:-latest}
+  restart: unless-stopped
+  env_file:
+    - ${APP_ENV_FILE:-.env}
+  environment:
+    POSTGRES_HOST: postgres
+    REDIS_URL: redis://redis:6379/0
+    DJANGO_ALLOWED_HOSTS: ${APP_DOMAIN:-localhost},${APP_NAME}-web,localhost,127.0.0.1
+    DJANGO_CSRF_TRUSTED_ORIGINS: https://${APP_DOMAIN:-localhost}
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    command: >-
+      postgres
+      -c max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
+      -c shared_buffers=${POSTGRES_SHARED_BUFFERS:-256MB}
+      -c log_min_duration_statement=1000
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "${POSTGRES_CPUS:-1.0}"
+          memory: ${POSTGRES_MEMORY:-1g}
+    labels:
+      autoheal: "true"
+      autoops.app: ${APP_NAME}
+      autoops.role: db
+    logging: *logging
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "${REDIS_MAXMEMORY:-256mb}", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384m
+    labels:
+      autoheal: "true"
+      autoops.app: ${APP_NAME}
+      autoops.role: cache
+    logging: *logging
+
+  # One-shot: migrations run (and must succeed) before web/worker start.
+  migrate:
+    <<: *app-common
+    command: ["migrate"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      autoops.app: ${APP_NAME}
+      autoops.role: migrate
+      autoops.oneshot: "true"
+
+  web:
+    <<: *app-common
+    command: ["web"]
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+      DJANGO_ALLOWED_HOSTS: ${APP_DOMAIN:-localhost},${APP_NAME}-web,localhost,127.0.0.1
+      DJANGO_CSRF_TRUSTED_ORIGINS: https://${APP_DOMAIN:-localhost}
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+    volumes:
+      - media:/app/media
+    healthcheck:
+      test: ["CMD", "python", "/app/docker/healthcheck.py"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "${WEB_CPUS:-1.0}"
+          memory: ${WEB_MEMORY:-512m}
+    networks:
+      default: {}
+      autoops:
+        aliases:
+          - ${APP_NAME}-web
+    # List form: Compose interpolates values only, and router names contain ${APP_NAME}.
+    labels:
+      - autoheal=true
+      - autoops.app=${APP_NAME}
+      - autoops.role=web
+      - traefik.enable=${TRAEFIK_ENABLE:-false}
+      - traefik.docker.network=autoops
+      - traefik.http.routers.${APP_NAME}.rule=Host(`${APP_DOMAIN:-localhost}`)
+      - traefik.http.routers.${APP_NAME}.entrypoints=websecure
+      - traefik.http.routers.${APP_NAME}.tls.certresolver=letsencrypt
+      - traefik.http.routers.${APP_NAME}.middlewares=secure-headers@file,rate-limit@file,compress@file
+      - traefik.http.services.${APP_NAME}.loadbalancer.server.port=8000
+      - traefik.http.services.${APP_NAME}.loadbalancer.healthcheck.path=/health/live/
+      - traefik.http.services.${APP_NAME}.loadbalancer.healthcheck.interval=10s
+
+  worker:
+    <<: *app-common
+    command: ["worker"]
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+      CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-2}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping --timeout 5 -d celery@$$HOSTNAME | grep -q pong"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "${WORKER_CPUS:-1.0}"
+          memory: ${WORKER_MEMORY:-512m}
+    labels:
+      autoheal: "true"
+      autoops.app: ${APP_NAME}
+      autoops.role: worker
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_URI: postgres:5432/${POSTGRES_DB:-app}?sslmode=disable
+      DATA_SOURCE_USER: ${POSTGRES_USER:-app}
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9187/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      default: {}
+      autoops:
+        aliases:
+          - ${APP_NAME}-postgres-exporter
+    labels:
+      autoheal: "true"
+      autoops.app: ${APP_NAME}
+      autoops.role: exporter
+    logging: *logging
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.74.0-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9121/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      default: {}
+      autoops:
+        aliases:
+          - ${APP_NAME}-redis-exporter
+    labels:
+      autoheal: "true"
+      autoops.app: ${APP_NAME}
+      autoops.role: exporter
+    logging: *logging
+
+volumes:
+  pgdata:
+  redisdata:
+  media:
+
+networks:
+  autoops:
+    external: true

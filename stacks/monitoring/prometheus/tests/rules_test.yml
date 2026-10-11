@@ -1,0 +1,191 @@
+# Unit tests for alert rules:  promtool test rules stacks/monitoring/prometheus/tests/rules_test.yml
+rule_files:
+  - ../rules/availability.yml
+  - ../rules/host.yml
+  - ../rules/containers.yml
+  - ../rules/databases.yml
+  - ../rules/backups.yml
+
+evaluation_interval: 15s
+
+tests:
+  # 1. Site down for more than a minute -> critical
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="blackbox-http",instance="https://app.example.uz/health/"}'
+        values: "1 1 0x10"
+    alert_rule_test:
+      - eval_time: 45s
+        alertname: SiteDown
+        exp_alerts: []
+      - eval_time: 2m30s
+        alertname: SiteDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: blackbox-http
+              instance: https://app.example.uz/health/
+            exp_annotations:
+              summary: "Сайт недоступен: https://app.example.uz/health/"
+              description: "Проверка https://app.example.uz/health/ извне проваливается больше 1 минуты (код ответа или /health/ не ok)."
+              runbook: "Откройте URL в браузере; на сервере: docker ps, docker compose logs web --tail 100; проверьте Postgres/Redis (алерты ниже). Подробно: docs/PRODUCTION.md#sitedown"
+              dashboard: "d/autoops-availability"
+
+  # 2. Disk above 90% for 2 minutes -> critical (and warning only after 5m)
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{job="node",fstype="ext4",mountpoint="/",device="/dev/sda1",instance="node-exporter:9100"}'
+        values: "5x10"
+      - series: 'node_filesystem_size_bytes{job="node",fstype="ext4",mountpoint="/",device="/dev/sda1",instance="node-exporter:9100"}'
+        values: "100x10"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: DiskSpaceCritical
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: node
+              fstype: ext4
+              mountpoint: /
+              device: /dev/sda1
+              instance: node-exporter:9100
+            exp_annotations:
+              summary: "Диск / почти заполнен: 95%"
+              description: "Автоочистка не помогла или не успевает. При 100% остановится база данных."
+              runbook: "Срочно освободите место: docker system df, большие логи, старые бэкапы в /var/backups. docs/PRODUCTION.md#diskspace"
+              dashboard: "d/autoops-server"
+      - eval_time: 3m
+        alertname: DiskSpaceWarning
+        exp_alerts: []
+
+  # 3. PostgreSQL unreachable -> critical after 30s
+  - interval: 15s
+    input_series:
+      - series: 'pg_up{app="shop",job="app-postgres",instance="shop-postgres-exporter:9187"}'
+        values: "1 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: PostgresDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              app: shop
+              job: app-postgres
+              instance: shop-postgres-exporter:9187
+            exp_annotations:
+              summary: "PostgreSQL приложения shop недоступен"
+              description: "postgres-exporter не может подключиться к базе больше 30 секунд. Сайт, скорее всего, отдаёт ошибки."
+              runbook: "docker ps -a --filter label=autoops.app=shop; docker logs ИМЯ_КОНТЕЙНЕРА_POSTGRES --tail 100. Watchdog попробует поднять стек сам. docs/PRODUCTION.md#postgresdown"
+              dashboard: "d/autoops-postgres"
+
+  # 4. Container restarted 4 times in 15 minutes -> crash loop
+  - interval: 1m
+    input_series:
+      - series: 'container_start_time_seconds{name="shop-web-1",job="cadvisor"}'
+        values: "100 100 220 220 340 340 460 460 580 580"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: ContainerCrashLoop
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              name: shop-web-1
+              job: cadvisor
+            exp_annotations:
+              summary: "Контейнер shop-web-1 в цикле перезапусков"
+              description: "Перезапускался 4 раз за 15 минут — автовосстановление не помогает."
+              runbook: "docker logs shop-web-1 --tail 200; docker inspect shop-web-1 --format '{{.State.OOMKilled}}'. Частые причины: OOM, нет доступа к БД, битая конфигурация после деплоя. docs/PRODUCTION.md#containercrashloop"
+              dashboard: "d/autoops-containers"
+
+  # 5. Last successful backup 27h ago -> critical
+  - interval: 1m
+    input_series:
+      - series: 'autoops_backup_last_success_timestamp_seconds{job="node"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: BackupTooOld
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'autoops_backup_last_success_timestamp_seconds{job="node"}'
+        values: "0x1700"
+    alert_rule_test:
+      - eval_time: 27h
+        alertname: BackupTooOld
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: node
+            exp_annotations:
+              summary: "Бэкап не выполнялся 1d 3h 0m 0s"
+              description: "Последний успешный бэкап старше 26 часов — ежедневный бэкап пропущен."
+              runbook: "systemctl status autoops-backup.timer; journalctl -u autoops-backup -n 100; запустить вручную: sudo /opt/autoops/scripts/backup/backup.sh. docs/PRODUCTION.md#backuptooold"
+              dashboard: "d/autoops-backups"
+
+  # 6. 5xx share of 10% for 5 minutes -> warning
+  - interval: 1m
+    input_series:
+      - series: 'django_http_responses_total_by_status_total{app="shop",status="200"}'
+        values: "0+540x10"
+      - series: 'django_http_responses_total_by_status_total{app="shop",status="500"}'
+        values: "0+60x10"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AppHigh5xxRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              app: shop
+            exp_annotations:
+              summary: "Приложение shop: 10% ответов с ошибкой 5xx"
+              description: "Больше 5% запросов завершаются ошибкой сервера в течение 5 минут."
+              runbook: "Grafana → Логи: {app=\"shop\"} |= \"ERROR\"; был ли недавно деплой? Откат: make rollback APP=shop. docs/PRODUCTION.md#apphigh5xxrate"
+              dashboard: "d/autoops-app"
+
+  # 7. CPU at 50% must NOT alert (negative test)
+  - interval: 1m
+    input_series:
+      - series: 'node_cpu_seconds_total{cpu="0",mode="idle",instance="node-exporter:9100"}'
+        values: "0+30x20"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HighCPU
+        exp_alerts: []
+
+  # 8. CPU at 100% for 10+ minutes -> warning
+  - interval: 1m
+    input_series:
+      - series: 'node_cpu_seconds_total{cpu="0",mode="idle",instance="node-exporter:9100"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: HighCPU
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: node-exporter:9100
+            exp_annotations:
+              summary: "Высокая загрузка CPU: 100%"
+              description: "Процессор загружен больше 85% уже 10 минут."
+              runbook: "docker stats --no-stream; top -o %CPU. Если это приложение — проверьте трафик и медленные запросы, при постоянной нагрузке нужен сервер мощнее. docs/PRODUCTION.md#highcpu"
+              dashboard: "d/autoops-server"
+
+  # 9. Watchdog gave up -> critical, human needed
+  - interval: 1m
+    input_series:
+      - series: 'autoops_watchdog_gave_up{action="start:shop",job="node"}'
+        values: "0 1 1"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: SelfHealGaveUp
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              action: start:shop
+              job: node
+            exp_annotations:
+              summary: "Автовосстановление сдалось: start:shop — нужен человек"
+              description: "Одно и то же действие повторялось слишком часто за час и не помогло. Watchdog прекратил попытки."
+              runbook: "journalctl -u autoops-watchdog -n 100; устраните причину, затем: sudo rm /var/lib/autoops/watchdog-state.json. docs/PRODUCTION.md#selfhealgaveup"
+              dashboard: "d/autoops-containers"
