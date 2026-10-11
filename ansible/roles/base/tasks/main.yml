@@ -1,0 +1,146 @@
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ base_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ autoops_timezone }}"
+  tags: [molecule-notest]   # needs systemd-timedated (dbus) which test containers lack
+
+- name: Enable time synchronisation (chrony)
+  ansible.builtin.service:
+    name: chrony
+    state: started
+    enabled: true
+  tags: [molecule-notest]   # chronyd needs CAP_SYS_TIME
+
+- name: Create AutoOps directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop: "{{ base_directories }}"
+
+# ---------------------------------------------------------------- swap
+- name: Swap file on small servers
+  when:
+    - ansible_memtotal_mb < base_swap_when_ram_below_mb
+    - ansible_swaptotal_mb == 0
+  tags: [molecule-notest]   # swapon is not permitted inside containers
+  block:
+    - name: Allocate swap file
+      ansible.builtin.command:
+        cmd: "fallocate -l {{ base_swap_size_mb }}M {{ base_swap_file }}"
+        creates: "{{ base_swap_file }}"
+
+    - name: Restrict swap file permissions
+      ansible.builtin.file:
+        path: "{{ base_swap_file }}"
+        mode: "0600"
+
+    - name: Format swap file
+      ansible.builtin.command:
+        cmd: "mkswap {{ base_swap_file }}"
+      register: mkswap
+      changed_when: mkswap.rc == 0
+
+    - name: Enable swap
+      ansible.builtin.command:
+        cmd: "swapon {{ base_swap_file }}"
+      register: swapon
+      changed_when: swapon.rc == 0
+
+- name: Persist swap in fstab
+  ansible.posix.mount:
+    src: "{{ base_swap_file }}"
+    path: none
+    fstype: swap
+    opts: sw
+    state: present
+  when: ansible_memtotal_mb < base_swap_when_ram_below_mb
+  tags: [molecule-notest]
+
+# ---------------------------------------------------------------- kernel / limits
+- name: Kernel tuning (sysctl)
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/60-autoops.conf
+    reload: true
+  loop: "{{ base_sysctl | dict2items }}"
+  tags: [molecule-notest]   # most keys are read-only inside containers
+
+- name: Ensure systemd drop-in directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/systemd/system.conf.d
+    - /etc/systemd/journald.conf.d
+
+- name: Raise open file limits for all users
+  ansible.builtin.copy:
+    dest: /etc/security/limits.d/60-autoops.conf
+    content: |
+      # Managed by AutoOps
+      *    soft nofile {{ base_nofile_limit }}
+      *    hard nofile {{ base_nofile_limit }}
+      root soft nofile {{ base_nofile_limit }}
+      root hard nofile {{ base_nofile_limit }}
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Raise open file limits for systemd services
+  ansible.builtin.copy:
+    dest: /etc/systemd/system.conf.d/60-autoops.conf
+    content: |
+      # Managed by AutoOps
+      [Manager]
+      DefaultLimitNOFILE={{ base_nofile_limit }}
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+# ---------------------------------------------------------------- journald
+- name: Cap journald disk usage
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/60-autoops.conf
+    content: |
+      # Managed by AutoOps
+      [Journal]
+      SystemMaxUse=500M
+      MaxRetentionSec=1month
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart journald
+
+# ---------------------------------------------------------------- security updates
+- name: Unattended-upgrades - security updates only, never auto-reboot
+  ansible.builtin.template:
+    src: 50unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Unattended-upgrades - enable daily run
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+    owner: root
+    group: root
+    mode: "0644"

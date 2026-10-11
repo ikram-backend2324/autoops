@@ -1,0 +1,9 @@
+galaxy_info:
+  author: autoops
+  description: Traefik v3 reverse proxy with automatic Let's Encrypt, security headers and rate limiting
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions: [jammy, noble]
+dependencies: []

@@ -1,0 +1,4 @@
+# {{ ansible_managed }}
+- targets: ["https://{{ app.domain }}/health/"]
+  labels:
+    app: {{ app.name }}

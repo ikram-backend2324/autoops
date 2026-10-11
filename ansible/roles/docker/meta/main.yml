@@ -1,0 +1,9 @@
+galaxy_info:
+  author: autoops
+  description: Docker CE + Compose v2 from the official repository, log rotation, shared network
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions: [jammy, noble]
+dependencies: []

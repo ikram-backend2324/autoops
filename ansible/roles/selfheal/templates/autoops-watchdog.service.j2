@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=AutoOps self-healing watchdog (one pass)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/autoops/watchdog.env
+ExecStart=/usr/bin/python3 {{ autoops_root }}/scripts/watchdog/watchdog.py
+TimeoutStartSec=15min
+Nice=-5

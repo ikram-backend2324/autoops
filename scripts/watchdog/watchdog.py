@@ -206,9 +206,15 @@ def heal_stacks(state: State, containers: list[dict]) -> None:
             cmd = ["docker", "compose", "-p", project]
             for f in files:
                 cmd += ["-f", f]
-            env_file = os.path.join(workdir, ".env")
-            if os.path.exists(env_file):
+            # Re-use exactly the env files the stack was started with (e.g. .env + tag.env),
+            # otherwise a healing `up -d` could silently switch the image tag.
+            env_files = [e for e in labels.get("com.docker.compose.project.environment_file", "").split(",") if e]
+            if not env_files and os.path.exists(os.path.join(workdir, ".env")):
+                env_files = [os.path.join(workdir, ".env")]
+            for env_file in env_files:
                 cmd += ["--env-file", env_file]
+            if workdir:
+                cmd += ["--project-directory", workdir]
             cmd += ["up", "-d"]
             how = "docker compose up -d"
         else:

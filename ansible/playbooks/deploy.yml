@@ -1,0 +1,10 @@
+# Deploy (or upgrade) every app listed in autoops_apps for the targeted hosts.
+#   make deploy                    # tags from inventory
+#   make deploy TAG=3f2c1ab        # pin all apps of the host to an image tag
+#   make rollback APP=shop         # previous tag of one app
+- name: Deploy applications
+  hosts: all
+  become: true
+  roles:
+    - role: app
+      tags: [app]

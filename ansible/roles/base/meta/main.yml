@@ -1,0 +1,9 @@
+galaxy_info:
+  author: autoops
+  description: Packages, timezone, swap, sysctl, limits, journald and security-only unattended upgrades
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions: [jammy, noble]
+dependencies: []

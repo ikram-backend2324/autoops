@@ -1,0 +1,31 @@
+- name: Verify security
+  hosts: all
+  become: true
+  tasks:
+    - name: Users exist
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ item }}"
+      loop: [ops, deploy]
+    - name: sshd effective configuration is hardened
+      ansible.builtin.command: /usr/sbin/sshd -T -C user=ops,host=localhost,addr=127.0.0.1
+      register: sshd
+      changed_when: false
+    - name: Root login and passwords are disabled
+      ansible.builtin.assert:
+        that:
+          - "'permitrootlogin no' in sshd.stdout"
+          - "'passwordauthentication no' in sshd.stdout"
+          - "'maxauthtries 3' in sshd.stdout"
+          - "'allowusers ops' in sshd.stdout"
+    - name: Deploy key is restricted to the forced command
+      ansible.builtin.command: grep -q 'command="/opt/autoops/bin/ci-deploy"' /home/deploy/.ssh/authorized_keys
+      changed_when: false
+    - name: deploy has no sudo
+      ansible.builtin.command: sudo -l -U deploy
+      register: sudo_deploy
+      changed_when: false
+      failed_when: "'not allowed' not in sudo_deploy.stdout"
+    - name: fail2ban jail for sshd
+      ansible.builtin.command: grep -q '^\[sshd\]' /etc/fail2ban/jail.local
+      changed_when: false

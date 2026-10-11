@@ -9,6 +9,7 @@
 #   BACKUP_STAGING         /var/backups/autoops (also the path inside restic snapshots)
 #   BACKUP_MEDIA_PATH      /app/media (inside the web container)
 #   VERIFY_TABLES          "core_note" - key tables whose row counts are recorded for verify_restore.sh
+#                          (per app: VERIFY_TABLES_<APP>, e.g. VERIFY_TABLES_SHOP="orders_order")
 #   KEEP_DAILY/KEEP_WEEKLY/KEEP_MONTHLY   retention, default 7/4/6
 #   TEXTFILE_DIR, NOTIFY_URL, SERVER_NAME
 set -Eeuo pipefail
@@ -85,7 +86,7 @@ for app in "${apps[@]}"; do
   # Exact row counts of the key tables, taken BEFORE the dump so that the dump always
   # contains at least these rows; verify_restore.sh compares against them.
   : > "$STAGING/$app/rowcounts.txt"
-  for table in ${VERIFY_TABLES:-core_note}; do
+  for table in $(tables_for "$app"); do
     sql="SELECT count(*) FROM \"$table\""
     if count=$(docker exec "$db" sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -c "$1"' _ "$sql" 2>/dev/null); then
       printf '%s|%s\n' "$table" "$count" >> "$STAGING/$app/rowcounts.txt"

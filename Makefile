@@ -13,6 +13,16 @@ TOOLS_IMAGE ?= autoops/tools:local
 APP         ?= sample
 INVENTORY   ?= ansible/inventory/hosts.yml
 LIMIT       ?= all
+EXTRA       ?=
+
+# Vault password: `export ANSIBLE_VAULT_PASSWORD_FILE=~/.autoops-vault`, otherwise you are asked for it.
+ifdef ANSIBLE_VAULT_PASSWORD_FILE
+  VAULT_MOUNT = -v $(ANSIBLE_VAULT_PASSWORD_FILE):/run/vault-pass:ro -e ANSIBLE_VAULT_PASSWORD_FILE=/run/vault-pass
+  VAULT_ARGS  =
+else
+  VAULT_MOUNT =
+  VAULT_ARGS  = $(if $(wildcard ansible/inventory/group_vars/all/vault.yml),--ask-vault-pass)
+endif
 
 # Ansible/linters run from the tools container unless ansible is installed locally.
 ifeq ($(shell command -v ansible-playbook 2>/dev/null),)
@@ -20,14 +30,16 @@ ifeq ($(shell command -v ansible-playbook 2>/dev/null),)
           -v $(ROOT):/work -w /work \
           -v $(HOME)/.ssh:/root/.ssh:ro \
           -v /var/run/docker.sock:/var/run/docker.sock \
-          -e ANSIBLE_VAULT_PASSWORD_FILE -e ANSIBLE_CONFIG=/work/ansible/ansible.cfg \
+          $(VAULT_MOUNT) -e ANSIBLE_CONFIG=/work/ansible/ansible.cfg -e ANSIBLE_ROLES_PATH=/work/ansible/roles \
           $(TOOLS_IMAGE)
   TOOLS_DEP = tools-image
 else
   TOOLS =
   TOOLS_DEP =
+  export ANSIBLE_CONFIG := $(ROOT)/ansible/ansible.cfg
+  export ANSIBLE_ROLES_PATH := $(ROOT)/ansible/roles
 endif
-PLAYBOOK = $(TOOLS) ansible-playbook -i $(INVENTORY) --limit $(LIMIT)
+PLAYBOOK = $(TOOLS) ansible-playbook -i $(INVENTORY) --limit $(LIMIT) $(VAULT_ARGS) $(EXTRA)
 
 ##@ Help
 .PHONY: help
@@ -147,7 +159,7 @@ screenshots: ## Grafana screenshots into docs/screenshots (local stack must be u
 ##@ Real server (Ansible)
 .PHONY: ping
 ping: $(TOOLS_DEP) ## Check SSH access to the inventory
-	$(TOOLS) ansible -i $(INVENTORY) all -m ping
+	$(TOOLS) ansible -i $(INVENTORY) all -m ping $(VAULT_ARGS) $(EXTRA)
 
 .PHONY: provision
 provision: $(TOOLS_DEP) ## Clean Ubuntu -> hardened Docker host with monitoring, backups, self-healing

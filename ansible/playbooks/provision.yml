@@ -1,0 +1,21 @@
+# Clean Ubuntu 22.04/24.04 -> hardened Docker host with HTTPS proxy, monitoring,
+# alerting, self-healing and backups. Idempotent: safe to re-run at any time.
+- name: Provision AutoOps server
+  hosts: all
+  become: true
+  roles:
+    - role: base
+      tags: [base]
+    - role: security
+      tags: [security]
+    - role: docker
+      tags: [docker]
+    - role: traefik
+      tags: [traefik]
+    - role: monitoring
+      tags: [monitoring]
+    - role: selfheal
+      tags: [selfheal]
+    - role: backup
+      tags: [backup]
+      when: backup_enabled | bool

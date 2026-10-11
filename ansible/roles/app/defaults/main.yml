@@ -1,0 +1,18 @@
+app_base_dir: "{{ autoops_root }}/apps"
+app_health_timeout: 120          # seconds to wait for a healthy web container after deploy
+app_tag_override: ""              # make deploy TAG=<sha>
+app_rollback: ""                  # make rollback APP=<name>
+app_defaults:
+  tag: latest
+  gunicorn_workers: 2
+  celery_concurrency: 2
+  web_cpus: "1.0"
+  web_memory: 512m
+  worker_cpus: "1.0"
+  worker_memory: 512m
+  postgres_cpus: "1.0"
+  postgres_memory: 1g
+  postgres_db: app
+  postgres_user: app
+  verify_tables: []
+  env: {}

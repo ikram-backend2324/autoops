@@ -1,0 +1,6 @@
+- name: Configure backups (pass -e backup_run_now=true to run one immediately)
+  hosts: all
+  become: true
+  roles:
+    - role: backup
+      tags: [backup]

@@ -1,0 +1,25 @@
+# Alternative to Traefik for single-app servers: Caddy gets and renews
+# Let's Encrypt certificates automatically. Add one block per site.
+{
+	email {$ACME_EMAIL}
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+	reverse_proxy {$APP_NAME}-web:8000 {
+		health_uri /health/live/
+		health_interval 10s
+	}
+}
+
+{$GRAFANA_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy grafana:3000
+}

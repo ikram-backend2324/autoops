@@ -1,0 +1,27 @@
+- name: Verify selfheal
+  hosts: all
+  become: true
+  tasks:
+    - name: Watchdog script present and executable
+      ansible.builtin.stat:
+        path: /opt/autoops/scripts/watchdog/watchdog.py
+      register: wd
+      failed_when: not wd.stat.executable
+    - name: Watchdog env is private
+      ansible.builtin.stat:
+        path: /etc/autoops/watchdog.env
+      register: env
+      failed_when: env.stat.mode != '0600'
+    - name: Timers are active
+      ansible.builtin.command: systemctl is-active {{ item }}
+      loop: [autoops-watchdog.timer, autoops-host-facts.timer, autoops-report.timer]
+      changed_when: false
+    - name: Units are valid
+      ansible.builtin.command: systemd-analyze verify /etc/systemd/system/autoops-watchdog.service /etc/systemd/system/autoops-report.timer
+      changed_when: false
+    - name: Host facts script writes metrics
+      ansible.builtin.command: /opt/autoops/scripts/report/host_facts.sh
+      changed_when: false
+    - name: Metrics file exists
+      ansible.builtin.command: grep -q autoops_reboot_required /var/lib/node_exporter/textfile/autoops_host_facts.prom
+      changed_when: false

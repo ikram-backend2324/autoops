@@ -7,6 +7,7 @@
 # and the watchdog watch - your real disk is never touched.
 # Server: CHAOS_DISK_MODE=host fills / with /var/tmp/autoops-chaos-fill.bin (cleaned by the
 # watchdog's WATCHDOG_CLEAN_GLOBS) up to CHAOS_DISK_TARGET percent.
+# shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
 preflight
 

@@ -1,0 +1,46 @@
+- name: Copy monitoring stack (configs, rules, dashboards)
+  ansible.builtin.copy:
+    src: "{{ autoops_repo_root }}/stacks/monitoring/"
+    dest: "{{ monitoring_dir }}/"
+    owner: root
+    group: root
+    mode: "0644"            # entrypoints are run via `sh`, no exec bit needed
+    directory_mode: "0755"
+  register: monitoring_files
+
+- name: Monitoring environment (secrets, 0600)
+  ansible.builtin.template:
+    src: monitoring.env.j2
+    dest: "{{ monitoring_dir }}/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  register: monitoring_env
+
+- name: Start / update the monitoring stack
+  ansible.builtin.command:
+    cmd: docker compose up -d --build --remove-orphans
+    chdir: "{{ monitoring_dir }}"
+  register: monitoring_up
+  changed_when: >-
+    'Started' in monitoring_up.stderr or 'Recreated' in monitoring_up.stderr
+    or 'Created' in monitoring_up.stderr
+
+- name: Apply changed configuration (configs are bind-mounted, so a restart is enough)
+  ansible.builtin.command:
+    cmd: docker compose restart prometheus alertmanager grafana loki alloy blackbox
+    chdir: "{{ monitoring_dir }}"
+  when: monitoring_files.changed or monitoring_env.changed
+  changed_when: true
+
+- name: Wait for Prometheus and Grafana
+  ansible.builtin.uri:
+    url: "{{ item }}"
+    status_code: 200
+  loop:
+    - http://127.0.0.1:9090/-/ready
+    - http://127.0.0.1:3000/api/health
+  register: monitoring_ready
+  until: monitoring_ready.status == 200
+  retries: 30
+  delay: 5

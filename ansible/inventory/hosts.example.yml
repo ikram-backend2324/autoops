@@ -1,0 +1,29 @@
+# Copy to hosts.yml (git-ignored) and fill in your server(s):
+#   cp ansible/inventory/hosts.example.yml ansible/inventory/hosts.yml
+#
+# First run on a fresh VPS: connect as root (or the provider's sudo user) with
+#   make provision INVENTORY=... -e ansible_user=root
+# After provisioning, root login is disabled and you connect as autoops_admin_user.
+all:
+  children:
+    autoops:
+      hosts:
+        client-shop-1:
+          ansible_host: 203.0.113.10          # server IP
+          ansible_user: ops                    # = autoops_admin_user after first provision
+          ansible_port: 22                     # = ssh_port after first provision
+          autoops_base_domain: shop.example.uz
+          # Apps on THIS server (several client projects can share one server):
+          autoops_apps:
+            - name: shop
+              image: ghcr.io/your-github-user/autoops-sample-app
+              tag: latest
+              domain: shop.example.uz
+              verify_tables: [core_note]
+              web_memory: 512m
+              gunicorn_workers: 3
+            # - name: pricewatch
+            #   image: ghcr.io/your-github-user/price-monitor
+            #   tag: latest
+            #   domain: prices.example.uz
+            #   verify_tables: [products_product]

@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Weekly AutoOps restore verification
+
+[Timer]
+OnCalendar={{ backup_verify_schedule }} {{ autoops_timezone }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

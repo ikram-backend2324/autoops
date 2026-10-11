@@ -1,0 +1,11 @@
+- name: Restart ssh
+  ansible.builtin.service:
+    name: ssh
+    state: restarted
+  failed_when: false   # containers in Molecule have no running sshd
+
+- name: Restart fail2ban
+  ansible.builtin.service:
+    name: fail2ban
+    state: restarted
+  failed_when: false

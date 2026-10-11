@@ -1,0 +1,10 @@
+- name: Converge
+  hosts: all
+  become: true
+  pre_tasks:
+    - name: Users the role adds to the docker group
+      ansible.builtin.user:
+        name: "{{ item }}"
+      loop: [ops, deploy]
+  roles:
+    - role: docker

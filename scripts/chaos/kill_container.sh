@@ -2,6 +2,7 @@
 # Scenario 1: the web process dies abruptly (SIGKILL, like an OOM kill or a segfault).
 # Expected: Docker's restart policy brings it back within seconds; Prometheus notices the
 # restart (ContainerRestarted, info) and the event reaches notify-relay / Telegram.
+# shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
 preflight
 

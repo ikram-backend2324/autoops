@@ -3,6 +3,7 @@
 # Expected: HighCPU alert fires (demo rules: after 1 min; production: after 10 min),
 # and resolves once the load is gone. There is nothing to "heal" automatically here -
 # the point is that a human is told, with the top consumer visible in Grafana.
+# shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
 preflight
 

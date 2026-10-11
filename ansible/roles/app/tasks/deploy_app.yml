@@ -1,0 +1,121 @@
+- name: "Merge settings with defaults - {{ app_item.name }}"
+  ansible.builtin.set_fact:
+    app: "{{ app_defaults | combine(app_item, recursive=True) }}"
+    app_dir: "{{ app_base_dir }}/{{ app_item.name }}"
+
+- name: "Validate - {{ app.name }}"
+  ansible.builtin.assert:
+    that:
+      - app.name is match('^[a-z0-9][a-z0-9-]{0,30}$')
+      - app.image | length > 0
+      - app.domain | length > 0
+      - app_secrets[app.name] is defined
+      - app_secrets[app.name].postgres_password | length >= 16
+      - app_secrets[app.name].django_secret_key | length >= 32
+    fail_msg: "App {{ app.name }}: name/image/domain or vault_app_secrets.{{ app.name }} (postgres_password, django_secret_key) missing or too short"
+
+- name: "Directory (readable by the CI deploy user) - {{ app.name }}"
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: directory
+    owner: root
+    group: "{{ deploy_user }}"
+    mode: "0750"
+
+- name: "Compose file - {{ app.name }}"
+  ansible.builtin.copy:
+    src: "{{ autoops_repo_root }}/stacks/app/compose.yml"
+    dest: "{{ app_dir }}/compose.yml"
+    owner: root
+    group: "{{ deploy_user }}"
+    mode: "0640"
+
+- name: "Settings and secrets - {{ app.name }}"
+  ansible.builtin.template:
+    src: app.env.j2
+    dest: "{{ app_dir }}/.env"
+    owner: root
+    group: "{{ deploy_user }}"
+    mode: "0640"
+
+- name: "Read currently deployed tag - {{ app.name }}"
+  ansible.builtin.slurp:
+    src: "{{ app_dir }}/tag.env"
+  register: app_tag_file
+  failed_when: false
+
+- name: "Decide which tag to run - {{ app.name }}"
+  vars:
+    current_env: "{{ (app_tag_file.content | default('') | b64decode) if app_tag_file.content is defined else '' }}"
+    current_tag: "{{ current_env | regex_search('(?m)^APP_TAG=(\\S+)', '\\1') | default([''], true) | first }}"
+    previous_tag: "{{ current_env | regex_search('(?m)^APP_PREVIOUS_TAG=(\\S+)', '\\1') | default([''], true) | first }}"
+  ansible.builtin.set_fact:
+    app_current_tag: "{{ current_tag }}"
+    app_target_tag: >-
+      {{ previous_tag if (app_rollback == app.name and previous_tag | length > 0)
+         else (app_tag_override if app_tag_override | length > 0 else app.tag) }}
+
+- name: "Write tag file - {{ app.name }}"
+  ansible.builtin.copy:
+    dest: "{{ app_dir }}/tag.env"
+    content: |
+      APP_TAG={{ app_target_tag }}
+      APP_PREVIOUS_TAG={{ app_current_tag if app_current_tag != app_target_tag else '' }}
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_user }}"
+    mode: "0664"
+
+- name: "Prometheus targets - {{ app.name }}"
+  ansible.builtin.template:
+    src: "{{ item }}.yml.j2"
+    dest: "{{ autoops_root }}/stacks/monitoring/prometheus/targets/{{ app.name }}-{{ item }}.yml"
+    mode: "0644"
+  loop: [app, probe]
+
+- name: "Pull images - {{ app.name }}"
+  ansible.builtin.command:
+    cmd: "{{ autoops_root }}/bin/autoops-compose {{ app.name }} pull --quiet --ignore-buildable"
+  changed_when: false
+
+- name: "Start / update - {{ app.name }}"
+  ansible.builtin.command:
+    cmd: "{{ autoops_root }}/bin/autoops-compose {{ app.name }} up -d --remove-orphans"
+  register: app_up
+  changed_when: "'Started' in app_up.stderr or 'Recreated' in app_up.stderr or 'Created' in app_up.stderr"
+
+- name: "Wait until web is healthy - {{ app.name }}"
+  ansible.builtin.command:
+    cmd: "{{ autoops_root }}/bin/autoops-compose {{ app.name }} health"
+  register: app_health
+  until: app_health.rc == 0
+  retries: "{{ (app_health_timeout | int / 5) | int }}"
+  delay: 5
+  changed_when: false
+  failed_when: false
+
+- name: "Automatic rollback when the new version is unhealthy - {{ app.name }}"
+  when: app_health.rc != 0
+  block:
+    - name: "Roll back to the previous tag - {{ app.name }}"
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/tag.env"
+        content: |
+          APP_TAG={{ app_current_tag }}
+          APP_PREVIOUS_TAG=
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_user }}"
+        mode: "0664"
+      when: app_current_tag | length > 0
+
+    - name: "Start previous version - {{ app.name }}"
+      ansible.builtin.command:
+        cmd: "{{ autoops_root }}/bin/autoops-compose {{ app.name }} up -d"
+      changed_when: true
+      when: app_current_tag | length > 0
+
+    - name: "Report failure - {{ app.name }}"
+      ansible.builtin.fail:
+        msg: >-
+          {{ app.name }}: version {{ app_target_tag }} did not become healthy within {{ app_health_timeout }}s.
+          {{ 'Rolled back to ' + app_current_tag if app_current_tag | length > 0 else 'No previous version to roll back to.' }}
+          Logs: {{ autoops_root }}/bin/autoops-compose {{ app.name }} logs --tail 100 web

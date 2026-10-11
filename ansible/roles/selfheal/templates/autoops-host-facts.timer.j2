@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Refresh AutoOps host facts hourly
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target

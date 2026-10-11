@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+- targets: ["{{ app.name }}-web:8000"]
+  labels:
+    app: {{ app.name }}
+    component: web
+- targets: ["{{ app.name }}-postgres-exporter:9187"]
+  labels:
+    app: {{ app.name }}
+    component: postgres
+- targets: ["{{ app.name }}-redis-exporter:9121"]
+  labels:
+    app: {{ app.name }}
+    component: redis

@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Weekly AutoOps report
+
+[Timer]
+OnCalendar={{ selfheal_report_schedule }} {{ autoops_timezone }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

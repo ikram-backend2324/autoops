@@ -3,6 +3,7 @@
 # demo-only endpoint POST /chaos/unhealthy/ that makes /health/live/ return 503.
 # Expected: Docker marks it unhealthy after 3 failed checks, autoheal restarts it,
 # autoheal's webhook reports the restart (notify-relay -> Telegram).
+# shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
 preflight
 

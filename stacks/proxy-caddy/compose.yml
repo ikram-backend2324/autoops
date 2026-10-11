@@ -1,0 +1,36 @@
+# Optional Caddy-based proxy (use INSTEAD of stacks/proxy, never both: they share ports 80/443).
+# Simpler than Traefik but sites are listed in the Caddyfile instead of Docker labels.
+services:
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
+      APP_NAME: ${APP_NAME:?set APP_NAME}
+      GRAFANA_DOMAIN: ${GRAFANA_DOMAIN:?set GRAFANA_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [autoops]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    labels:
+      autoheal: "true"
+      autoops.role: proxy
+
+volumes:
+  caddy-data:
+  caddy-config:
+
+networks:
+  autoops:
+    external: true

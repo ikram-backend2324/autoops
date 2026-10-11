@@ -1,0 +1,4 @@
+traefik_dir: "{{ autoops_root }}/stacks/proxy"
+# Use the Let's Encrypt staging CA while experimenting to avoid rate limits:
+# traefik_acme_ca_server: https://acme-staging-v02.api.letsencrypt.org/directory
+traefik_acme_ca_server: https://acme-v02.api.letsencrypt.org/directory

@@ -1,0 +1,3 @@
+monitoring_dir: "{{ autoops_root }}/stacks/monitoring"
+monitoring_grafana_url: "https://{{ autoops_grafana_domain }}"
+monitoring_traefik_enable: true

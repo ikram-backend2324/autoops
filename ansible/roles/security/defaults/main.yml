@@ -1,0 +1,10 @@
+security_ufw_enabled: true
+security_ufw_allowed_tcp: [80, 443]
+security_fail2ban_enabled: true
+security_fail2ban_bantime: 1h
+security_fail2ban_findtime: 10m
+security_fail2ban_maxretry: 5
+security_lock_root_password: true
+# Disable systemd socket activation of ssh (Ubuntu 24.04) so that the Port from
+# sshd_config is honoured.
+security_disable_ssh_socket: true

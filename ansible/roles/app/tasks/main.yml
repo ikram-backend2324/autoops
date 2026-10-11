@@ -1,0 +1,28 @@
+- name: Install helper scripts (autoops-compose, ci-deploy)
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ autoops_root }}/bin/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - { src: autoops-compose.sh.j2, dest: autoops-compose }
+    - { src: ci-deploy.sh.j2, dest: ci-deploy }
+
+- name: Log in to the container registry (private images only)
+  ansible.builtin.shell: |
+    set -o pipefail
+    echo "{{ registry_password }}" | docker login {{ registry_host }} -u "{{ registry_username }}" --password-stdin
+  args:
+    executable: /bin/bash
+  when: registry_username | length > 0 and registry_password | length > 0
+  changed_when: false
+  no_log: true
+
+- name: Deploy each application
+  ansible.builtin.include_tasks: deploy_app.yml
+  loop: "{{ autoops_apps }}"
+  loop_control:
+    loop_var: app_item
+    label: "{{ app_item.name }}"
+  when: app_rollback | length == 0 or app_rollback == app_item.name

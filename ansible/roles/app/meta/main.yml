@@ -1,0 +1,9 @@
+galaxy_info:
+  author: autoops
+  description: Deploy one or more Docker Compose apps behind Traefik with health-gated rollout and rollback
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions: [jammy, noble]
+dependencies: []

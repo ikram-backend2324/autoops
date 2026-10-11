@@ -1,0 +1,21 @@
+- name: Verify docker
+  hosts: all
+  become: true
+  tasks:
+    - name: Docker CLI and compose plugin installed
+      ansible.builtin.command: docker compose version
+      changed_when: false
+    - name: Read daemon.json
+      ansible.builtin.slurp:
+        src: /etc/docker/daemon.json
+      register: daemon
+    - name: Log rotation configured
+      ansible.builtin.assert:
+        that:
+          - (daemon.content | b64decode | from_json)['log-opts']['max-size'] == '10m'
+          - (daemon.content | b64decode | from_json)['live-restore']
+    - name: deploy is in the docker group
+      ansible.builtin.command: id -nG deploy
+      register: groups
+      changed_when: false
+      failed_when: "'docker' not in groups.stdout"

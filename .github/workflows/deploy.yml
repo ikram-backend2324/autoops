@@ -1,0 +1,151 @@
+name: Deploy
+
+# main -> tests -> image (ghcr.io/<owner>/autoops-sample-app:sha-xxxxxxx + latest)
+#      -> SSH as the restricted "deploy" user -> pull + up -d -> /health/ for up to 60 s
+#      -> automatic rollback to the previous tag on failure -> Telegram message.
+# Required configuration: docs/RUN.md#github-actions (secrets + variables).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sample-app/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: autoops-sample-app
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  image:
+    name: Build and push to GHCR
+    needs: [ci]
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: meta
+        name: Image name and tag
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "image=ghcr.io/${owner}/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: sample-app
+          target: runtime
+          push: true
+          build-args: GIT_SHA=${{ steps.meta.outputs.tag }}
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to server
+    needs: [image]
+    runs-on: ubuntu-24.04
+    # Set repository variable DEPLOY_ENABLED=true once the server and secrets exist.
+    if: vars.DEPLOY_ENABLED == 'true'
+    environment: production
+    env:
+      APP_NAME: ${{ vars.APP_NAME }}
+      APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+      TAG: ${{ needs.image.outputs.tag }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_PORT: ${{ secrets.SERVER_PORT }}
+          SERVER_KNOWN_HOSTS: ${{ secrets.SERVER_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "$SERVER_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$SERVER_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            echo "::warning::SERVER_KNOWN_HOSTS not set - trusting the key from ssh-keyscan (TOFU)"
+            ssh-keyscan -p "${SERVER_PORT:-22}" "$SERVER_HOST" > ~/.ssh/known_hosts
+          fi
+          cat > ~/.ssh/config <<EOF
+          Host server
+            HostName $SERVER_HOST
+            Port ${SERVER_PORT:-22}
+            User deploy
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            ServerAliveInterval 15
+          EOF
+
+      - name: Deploy (server-side health check + automatic rollback)
+        id: deploy
+        run: |
+          set +e
+          # shellcheck disable=SC2029  # expanding on the runner side is intended
+          ssh server "deploy ${APP_NAME} ${TAG}" 2>&1 | tee deploy.log
+          rc=${PIPESTATUS[0]}
+          echo "result=$(grep -o 'RESULT=[a-z_]*' deploy.log | tail -n1 | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+          echo "previous=$(grep -o 'PREVIOUS=[^ ]*' deploy.log | tail -n1 | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      - name: External check https://<domain>/health/ (up to 60 s)
+        id: external
+        run: |
+          for i in $(seq 1 12); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -m 5 "https://${APP_DOMAIN}/health/" || true)
+            echo "attempt $i: HTTP $code"
+            [ "$code" = 200 ] && exit 0
+            sleep 5
+          done
+          exit 1
+
+      - name: Roll back when the public check fails
+        if: failure() && steps.deploy.outcome == 'success' && steps.external.outcome == 'failure'
+        run: |
+          # shellcheck disable=SC2029
+          ssh server "rollback ${APP_NAME}"
+
+      - name: Notify Telegram - success
+        if: success()
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          [ -n "$TELEGRAM_BOT_TOKEN" ] || exit 0
+          curl -fsS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=✅ Деплой ${TAG} успешен
+          🧩 ${APP_NAME} → https://${APP_DOMAIN}
+          👤 ${GITHUB_ACTOR}: ${COMMIT_MESSAGE}" >/dev/null
+
+      - name: Notify Telegram - failure and rollback
+        if: failure()
+        run: |
+          [ -n "$TELEGRAM_BOT_TOKEN" ] || exit 0
+          curl -fsS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=❌ Деплой ${TAG} (${APP_NAME}) провален — выполнен автоматический откат.
+          Результат на сервере: ${{ steps.deploy.outputs.result || 'нет ответа' }}
+          Логи: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >/dev/null

@@ -1,0 +1,47 @@
+- name: Copy AutoOps scripts (watchdog, backup, report, chaos)
+  ansible.builtin.copy:
+    src: "{{ autoops_repo_root }}/scripts/"
+    dest: "{{ autoops_root }}/scripts/"
+    owner: root
+    group: root
+    # Fixed mode: checkouts on Windows/WSL lose the exec bit, and a separate chmod
+    # task would fight with this copy on every run (not idempotent).
+    mode: "0755"
+    directory_mode: "0755"
+
+- name: Watchdog and notification settings
+  ansible.builtin.template:
+    src: watchdog.env.j2
+    dest: /etc/autoops/watchdog.env
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Install systemd units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - autoops-watchdog.service
+    - autoops-watchdog.timer
+    - autoops-host-facts.service
+    - autoops-host-facts.timer
+    - autoops-report.service
+    - autoops-report.timer
+  notify: Reload systemd
+
+- name: Apply unit changes before enabling timers
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable timers
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - autoops-watchdog.timer
+    - autoops-host-facts.timer
+    - autoops-report.timer

@@ -1,0 +1,31 @@
+http:
+  middlewares:
+    secure-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: false
+        forceSTSHeader: true
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: strict-origin-when-cross-origin
+        permissionsPolicy: "camera=(), microphone=(), geolocation=()"
+        customResponseHeaders:
+          Server: ""
+          X-Powered-By: ""
+
+    rate-limit:
+      rateLimit:
+        average: 50
+        period: 1s
+        burst: 100
+
+    compress:
+      compress: {}
+
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+      sniStrict: true

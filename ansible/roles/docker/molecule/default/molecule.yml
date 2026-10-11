@@ -1,0 +1,33 @@
+# Molecule: converge + idempotence + verify in a systemd Ubuntu container.
+# Run: make molecule ROLE=docker   (tasks tagged molecule-notest are skipped, see docs/DECISIONS.md)
+driver:
+  name: docker
+platforms:
+  - name: autoops-molecule-docker
+    image: ${MOLECULE_IMAGE:-geerlingguy/docker-ubuntu2404-ansible:latest}
+    pre_build_image: true
+    privileged: true
+    cgroupns_mode: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    command: ""
+    tmpfs:
+      - /run
+      - /tmp
+provisioner:
+  name: ansible
+  inventory:
+    links:
+      group_vars: ../../../../molecule/group_vars/
+  env:
+    ANSIBLE_ROLES_PATH: ${MOLECULE_PROJECT_DIRECTORY}/..
+scenario:
+  test_sequence:
+    - destroy
+    - create
+    - converge
+    - idempotence
+    - verify
+    - destroy
+verifier:
+  name: ansible

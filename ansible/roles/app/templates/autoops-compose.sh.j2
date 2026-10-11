@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# autoops-compose APP <docker compose args...>   e.g.  autoops-compose shop logs -f web
+# autoops-compose APP health                      exit 0 when web is healthy and /health/ is ok
+set -euo pipefail
+app=${1:?usage: autoops-compose APP <compose args>}
+shift
+[[ "$app" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || { echo "invalid app name" >&2; exit 2; }
+dir={{ app_base_dir }}/$app
+[[ -f "$dir/compose.yml" ]] || { echo "unknown app: $app" >&2; exit 2; }
+
+compose=(docker compose --project-directory "$dir" -p "$app" -f "$dir/compose.yml" --env-file "$dir/.env")
+[[ -f "$dir/tag.env" ]] && compose+=(--env-file "$dir/tag.env")
+
+if [[ "${1:-}" == health ]]; then
+  web=$("${compose[@]}" ps -q web)
+  [[ -n "$web" ]] || exit 1
+  [[ "$(docker inspect -f '{{ '{{' }}.State.Health.Status{{ '}}' }}' "$web")" == healthy ]] || exit 1
+  docker exec "$web" python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/', timeout=5).status == 200 else 1)"
+  exit $?
+fi
+
+exec "${compose[@]}" "$@"

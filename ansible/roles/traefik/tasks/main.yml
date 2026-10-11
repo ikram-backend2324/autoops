@@ -1,0 +1,50 @@
+- name: Copy Traefik stack
+  ansible.builtin.copy:
+    src: "{{ autoops_repo_root }}/stacks/proxy/"
+    dest: "{{ traefik_dir }}/"
+    owner: root
+    group: root
+    mode: "0644"
+    directory_mode: "0755"
+  notify: Restart traefik
+
+- name: Certificate storage (must be 0600 for Traefik)
+  ansible.builtin.file:
+    path: "{{ traefik_dir }}/acme"
+    state: directory
+    mode: "0700"
+
+- name: Traefik environment
+  ansible.builtin.copy:
+    dest: "{{ traefik_dir }}/.env"
+    content: |
+      ACME_EMAIL={{ autoops_acme_email }}
+      ACME_CA_SERVER={{ traefik_acme_ca_server }}
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart traefik
+
+- name: Start Traefik
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ traefik_dir }}"
+  register: traefik_up
+  changed_when: "'Started' in traefik_up.stderr or 'Recreated' in traefik_up.stderr"
+
+- name: Ensure Prometheus targets directory exists
+  ansible.builtin.file:
+    path: "{{ autoops_root }}/stacks/monitoring/prometheus/targets"
+    state: directory
+    mode: "0755"
+
+- name: Let Prometheus scrape Traefik metrics
+  ansible.builtin.copy:
+    dest: "{{ autoops_root }}/stacks/monitoring/prometheus/targets/proxy-app.yml"
+    content: |
+      # {{ ansible_managed }}
+      - targets: ["traefik:8082"]
+        labels:
+          app: proxy
+          component: traefik
+    mode: "0644"

@@ -1,0 +1,5 @@
+backup_run_now: false
+backup_verify_schedule: "Sun *-*-* 04:00:00"
+backup_restic_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+backup_restic_url: "https://github.com/restic/restic/releases/download/v{{ restic_version }}/restic_{{ restic_version }}_linux_{{ backup_restic_arch }}.bz2"
+backup_apps: "{{ autoops_apps | map(attribute='name') | list }}"

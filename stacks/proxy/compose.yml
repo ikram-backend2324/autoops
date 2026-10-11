@@ -1,0 +1,62 @@
+# Traefik v3: the only service listening on public ports 80/443.
+# Automatic Let's Encrypt (HTTP-01), HTTP->HTTPS redirect, security headers,
+# rate limiting and compression (dynamic/middlewares.yml). Apps opt in with labels.
+# Static configuration is given as CLI flags so ${ACME_EMAIL} can be interpolated.
+services:
+  traefik:
+    image: traefik:v3.5.0
+    restart: unless-stopped
+    command:
+      - --global.checkNewVersion=false
+      - --global.sendAnonymousUsage=false
+      - --entryPoints.web.address=:80
+      - --entryPoints.web.http.redirections.entryPoint.to=websecure
+      - --entryPoints.web.http.redirections.entryPoint.scheme=https
+      - --entryPoints.web.http.redirections.entryPoint.permanent=true
+      - --entryPoints.websecure.address=:443
+      - --entryPoints.websecure.http.tls.certResolver=letsencrypt
+      - --entryPoints.websecure.transport.respondingTimeouts.readTimeout=60s
+      - --entryPoints.websecure.transport.respondingTimeouts.writeTimeout=60s
+      - --entryPoints.metrics.address=:8082
+      - --providers.docker.exposedByDefault=false
+      - --providers.docker.network=autoops
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --certificatesResolvers.letsencrypt.acme.email=${ACME_EMAIL:?set ACME_EMAIL}
+      - --certificatesResolvers.letsencrypt.acme.storage=/acme/acme.json
+      - --certificatesResolvers.letsencrypt.acme.httpChallenge.entryPoint=web
+      - --certificatesResolvers.letsencrypt.acme.caServer=${ACME_CA_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
+      - --ping=true
+      - --metrics.prometheus=true
+      - --metrics.prometheus.entryPoint=metrics
+      - --metrics.prometheus.addRoutersLabels=true
+      - --metrics.prometheus.addServicesLabels=true
+      - --accessLog=true
+      - --accessLog.format=json
+      - --accessLog.fields.headers.defaultMode=drop
+      - --log.level=INFO
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./dynamic:/etc/traefik/dynamic:ro
+      - ./acme:/acme
+    networks: [autoops]
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    labels:
+      autoheal: "true"
+      autoops.role: proxy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  autoops:
+    external: true

@@ -2,6 +2,7 @@
 # Run every chaos scenario, print a summary table and write docs/chaos-report.md.
 #   CHAOS_NONINTERACTIVE=1  no "press Enter" pauses
 #   CHAOS_ONLY="1 3"        run a subset
+# shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
 preflight
 

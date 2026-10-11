@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Run the AutoOps watchdog every {{ selfheal_interval }}
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ selfheal_interval }}
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

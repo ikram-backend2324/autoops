@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+[Unit]
+Description=AutoOps host facts for Prometheus (pending security updates, reboot required)
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/autoops/watchdog.env
+ExecStart={{ autoops_root }}/scripts/report/host_facts.sh

@@ -3,6 +3,7 @@
 # A manual stop is NOT covered by restart policies - this is the watchdog's job.
 # Expected: /health/ -> 503, PostgresDown (critical) alert, watchdog restarts the stack
 # after its grace period, alert resolves.
+# shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
 preflight
 

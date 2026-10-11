@@ -1,0 +1,31 @@
+# Shared variables for every role's Molecule scenario (linked from molecule.yml).
+autoops_root: /opt/autoops
+autoops_repo_root: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/../../.."
+autoops_server_name: molecule
+autoops_timezone: Asia/Tashkent
+autoops_base_domain: example.test
+autoops_acme_email: admin@example.test
+autoops_grafana_domain: grafana.example.test
+autoops_admin_user: ops
+autoops_admin_keys:
+  - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMoleculeTestKeyOnlyForTestsXXXXXXXXXXXXXXXXX molecule"
+deploy_user: deploy
+deploy_keys:
+  - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMoleculeDeployKeyOnlyForTestsXXXXXXXXXXXXXXX ci"
+ssh_port: 22
+ssh_extra_allow_users: []
+docker_start_service: false
+telegram_bot_token: ""
+telegram_chat_id: ""
+restic_version: "0.18.0"
+restic_repository: "s3:http://s3.example.test/bucket"
+restic_password: "molecule-only"
+s3_access_key_id: "molecule"
+s3_secret_access_key: "molecule"
+backup_time: "03:00"
+backup_keep_daily: 7
+backup_keep_weekly: 4
+backup_keep_monthly: 6
+autoops_apps:
+  - name: sample
+    verify_tables: [core_note]

@@ -1,0 +1,26 @@
+- name: Verify backup
+  hosts: all
+  become: true
+  tasks:
+    - name: restic installed in the pinned version
+      ansible.builtin.command: /usr/local/bin/restic version
+      register: restic
+      changed_when: false
+      failed_when: "'0.18.0' not in restic.stdout"
+    - name: Backup secrets are private
+      ansible.builtin.stat:
+        path: /etc/autoops/backup.env
+      register: env
+      failed_when: env.stat.mode != '0600'
+    - name: Per-app verification tables rendered
+      ansible.builtin.command: grep -q '^VERIFY_TABLES_SAMPLE=core_note' /etc/autoops/backup.env
+      changed_when: false
+    - name: Backup timer fires daily at 03:00 Tashkent
+      ansible.builtin.command: systemctl cat autoops-backup.timer
+      register: timer
+      changed_when: false
+      failed_when: "'03:00:00 Asia/Tashkent' not in timer.stdout"
+    - name: Timers are active
+      ansible.builtin.command: systemctl is-active {{ item }}
+      loop: [autoops-backup.timer, autoops-verify-restore.timer]
+      changed_when: false

@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=AutoOps weekly restore verification (latest backup -> temporary Postgres)
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/autoops/backup.env
+ExecStart={{ autoops_root }}/scripts/backup/verify_restore.sh
+TimeoutStartSec=3h
+Nice=10

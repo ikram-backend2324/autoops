@@ -3,7 +3,8 @@
 #   latest snapshot -> temporary Postgres container -> pg_restore -> control queries
 #   -> metrics for Prometheus + Telegram report -> container removed.
 #
-# VERIFY_TABLES  tables whose row count must be > 0 (default: core_note; set per client app)
+# VERIFY_TABLES  tables whose row count must be > 0 (per app: VERIFY_TABLES_<APP>);
+#                empty -> it is enough that schema "public" contains tables
 # VERIFY_MIN_RATIO  restored rows must be >= ratio * rows recorded at backup time (default 1.0)
 set -Eeuo pipefail
 
@@ -16,7 +17,6 @@ source "$SCRIPT_DIR/../lib/common.sh"
 STAGING=${BACKUP_STAGING:-/var/backups/autoops}
 HOST_TAG=${SERVER_NAME:-$(hostname)}
 PG_IMAGE=${VERIFY_PG_IMAGE:-postgres:16-alpine}
-TABLES=${VERIFY_TABLES:-core_note}  # space or comma separated
 WORK=$(mktemp -d)
 started=$(date +%s)
 overall=0
@@ -26,6 +26,7 @@ metrics="# HELP autoops_restore_verify_success 1 if the latest backup restored a
 rows_metrics="# HELP autoops_restore_verify_rows Rows found in the restored copy.
 # TYPE autoops_restore_verify_rows gauge"
 
+# shellcheck disable=SC2317  # invoked via trap
 cleanup() {
   docker rm -f "${containers[@]}" >/dev/null 2>&1 || true
   rm -rf "$WORK"
@@ -68,14 +69,20 @@ for app in "${apps[@]}"; do
   } >"$WORK/$app.log" 2>&1 || { status=0; detail="restore failed: $(tail -n 3 "$WORK/$app.log" | tr '\n' ' ')"; }
 
   if [[ $status == 1 ]]; then
-    for table in ${TABLES//,/ }; do
+    tables=$(tables_for "$app")
+    if [[ -z "$tables" ]]; then
+      n=$(docker exec "$name" psql -U postgres -d verify -At -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'" 2>/dev/null || echo 0)
+      if (( n > 0 )); then detail+="таблиц в public: $n ✓; "; else status=0; detail+="в восстановленной базе нет таблиц; "; fi
+    fi
+    for table in $tables; do
       rows=$(docker exec "$name" psql -U postgres -d verify -At -c "SELECT count(*) FROM \"$table\"" 2>/dev/null || echo "ERR")
       expected=$(awk -F'|' -v t="$table" '$1==t {print $2}' "$WORK/$app.rowcounts")
       if [[ "$rows" == "ERR" ]]; then
         status=0; detail+="$table: таблица отсутствует; "
         continue
       fi
-      rows_metrics+=$'\n'"autoops_restore_verify_rows{app=\"$app\",table=\"$table\"} $rows"
+      rows_metrics+=$'
+'"autoops_restore_verify_rows{app=\"$app\",table=\"$table\"} $rows"
       if (( rows == 0 )); then
         status=0; detail+="$table: 0 строк; "
       elif [[ -n "$expected" ]] && ! awk -v r="$rows" -v e="$expected" -v m="${VERIFY_MIN_RATIO:-1.0}" 'BEGIN{exit !(r >= e*m)}'; then

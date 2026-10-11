@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# Forced command for the CI "{{ deploy_user }}" SSH key (see authorized_keys).
+# The key can do exactly this and nothing else:
+#   ssh deploy@server deploy  APP TAG   -> pull TAG, start it, wait for health, auto-rollback on failure
+#   ssh deploy@server rollback APP      -> switch back to the previous tag
+#   ssh deploy@server status  APP       -> current/previous tag and container status
+set -euo pipefail
+
+read -r -a args <<< "${SSH_ORIGINAL_COMMAND:-${*}}"
+action=${args[0]:-}
+app=${args[1]:-}
+tag=${args[2]:-}
+timeout=${CI_HEALTH_TIMEOUT:-60}
+
+[[ "$app" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || { echo "usage: deploy APP TAG | rollback APP | status APP" >&2; exit 2; }
+dir={{ app_base_dir }}/$app
+[[ -f "$dir/compose.yml" ]] || { echo "unknown app: $app" >&2; exit 2; }
+compose={{ autoops_root }}/bin/autoops-compose
+current=$(sed -n 's/^APP_TAG=//p' "$dir/tag.env" 2>/dev/null || true)
+previous=$(sed -n 's/^APP_PREVIOUS_TAG=//p' "$dir/tag.env" 2>/dev/null || true)
+
+switch_to() {  # switch_to NEW_TAG PREVIOUS_TAG
+  printf 'APP_TAG=%s\nAPP_PREVIOUS_TAG=%s\n' "$1" "$2" > "$dir/tag.env"
+  "$compose" "$app" pull --quiet web worker migrate
+  "$compose" "$app" up -d --remove-orphans
+}
+
+wait_healthy() {
+  local deadline=$(( $(date +%s) + timeout ))
+  sleep 5
+  while (( $(date +%s) < deadline )); do
+    "$compose" "$app" health >/dev/null 2>&1 && return 0
+    sleep 3
+  done
+  return 1
+}
+
+case "$action" in
+  deploy)
+    [[ "$tag" =~ ^[A-Za-z0-9._-]{1,128}$ ]] || { echo "invalid tag" >&2; exit 2; }
+    echo "deploying $app:$tag (current: ${current:-none})"
+    switch_to "$tag" "$current"
+    if wait_healthy; then
+      echo "RESULT=ok TAG=$tag PREVIOUS=${current:-none}"
+      exit 0
+    fi
+    echo "health check failed within ${timeout}s" >&2
+    "$compose" "$app" logs --tail 50 web >&2 || true
+    if [[ -n "$current" && "$current" != "$tag" ]]; then
+      echo "rolling back to $current" >&2
+      switch_to "$current" ""
+      wait_healthy && echo "RESULT=rolled_back TAG=$current FAILED=$tag" || echo "RESULT=rollback_unhealthy TAG=$current FAILED=$tag"
+    else
+      echo "RESULT=failed_no_previous FAILED=$tag"
+    fi
+    exit 1
+    ;;
+  rollback)
+    [[ -n "$previous" ]] || { echo "no previous tag recorded" >&2; exit 1; }
+    echo "rolling back $app: $current -> $previous"
+    switch_to "$previous" ""
+    wait_healthy && echo "RESULT=ok TAG=$previous" || { echo "RESULT=unhealthy TAG=$previous"; exit 1; }
+    ;;
+  status)
+    echo "app=$app current=${current:-none} previous=${previous:-none}"
+    "$compose" "$app" ps --format 'table {{ '{{' }}.Service{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}'
+    ;;
+  *)
+    echo "usage: deploy APP TAG | rollback APP | status APP" >&2
+    exit 2
+    ;;
+esac

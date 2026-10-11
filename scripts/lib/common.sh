@@ -57,3 +57,12 @@ write_textfile() {
 find_container() {
   docker ps -q --filter "label=autoops.app=$1" --filter "label=autoops.role=$2" | head -n1
 }
+
+# tables_for APP -> key tables to count for APP: VERIFY_TABLES_<APP> (upper-case, '-' -> '_')
+# falls back to VERIFY_TABLES; empty means "any table in schema public".
+tables_for() {
+  local key value
+  key="VERIFY_TABLES_$(tr 'a-z-' 'A-Z_' <<< "$1")"
+  value=${!key:-${VERIFY_TABLES:-}}
+  printf '%s' "${value//,/ }"
+}

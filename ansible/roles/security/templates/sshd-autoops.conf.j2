@@ -1,0 +1,18 @@
+# {{ ansible_managed }}
+Port {{ ssh_port }}
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+MaxAuthTries 3
+MaxSessions 10
+LoginGraceTime 30
+AllowUsers {{ ([autoops_admin_user, deploy_user] + ssh_extra_allow_users) | join(' ') }}
+X11Forwarding no
+AllowAgentForwarding no
+PermitTunnel no
+ClientAliveInterval 300
+ClientAliveCountMax 2
+# Port forwarding stays enabled for the admin: Grafana/Prometheus via SSH tunnel.
+AllowTcpForwarding yes

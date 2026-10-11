@@ -1,0 +1,21 @@
+- name: Verify base
+  hosts: all
+  become: true
+  tasks:
+    - name: AutoOps directories exist
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: [/opt/autoops/bin, /etc/autoops, /var/lib/node_exporter/textfile, /var/backups/autoops]
+      register: dirs
+      failed_when: not dirs.stat.isdir
+    - name: Open file limits configured
+      ansible.builtin.command: grep -q "nofile 65535" /etc/security/limits.d/60-autoops.conf
+      changed_when: false
+    - name: Unattended upgrades limited to security and no auto-reboot
+      ansible.builtin.command: grep -q 'Automatic-Reboot "false"' /etc/apt/apt.conf.d/50unattended-upgrades
+      changed_when: false
+    - name: Packages installed
+      ansible.builtin.package_facts:
+    - name: chrony and unattended-upgrades present
+      ansible.builtin.assert:
+        that: ["'chrony' in ansible_facts.packages", "'unattended-upgrades' in ansible_facts.packages"]

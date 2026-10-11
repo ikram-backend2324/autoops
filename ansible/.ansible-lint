@@ -1,0 +1,11 @@
+profile: production
+offline: true
+exclude_paths:
+  - inventory/group_vars/all/vault.yml
+  - molecule/
+  - roles/*/molecule/
+skip_list:
+  # Roles intentionally share the global autoops_*/deploy_user/ssh_port settings.
+  - var-naming[no-role-prefix]
+warn_list:
+  - experimental

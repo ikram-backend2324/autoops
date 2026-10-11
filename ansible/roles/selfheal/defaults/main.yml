@@ -1,0 +1,9 @@
+selfheal_interval: 1min
+selfheal_grace_seconds: 60
+selfheal_disk_paths: "/"
+selfheal_disk_threshold: 85
+selfheal_max_actions_per_hour: 3
+selfheal_clean_globs: "/var/tmp/autoops-chaos-*,/var/log/*.gz,/var/log/*.[0-9],/var/log/**/*.gz"
+selfheal_prune_until: 72h
+# Weekly Telegram report (systemd OnCalendar, server timezone)
+selfheal_report_schedule: "Mon *-*-* 09:00:00"

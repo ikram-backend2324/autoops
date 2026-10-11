@@ -314,7 +314,8 @@ def main() -> None:
         "logs.json": logs_dash(),
     }
     for name, board in boards.items():
-        (OUT / name).write_text(json.dumps(board, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        with open(OUT / name, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(json.dumps(board, ensure_ascii=False, indent=2) + "\n")
         print(f"wrote {OUT / name}")
 
 

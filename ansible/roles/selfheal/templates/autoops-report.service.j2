@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+[Unit]
+Description=AutoOps weekly report to Telegram
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/autoops/watchdog.env
+ExecStart=/usr/bin/python3 {{ autoops_root }}/scripts/report/weekly_report.py

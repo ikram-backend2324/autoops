@@ -1,0 +1,64 @@
+- name: Check installed restic version
+  ansible.builtin.command: /usr/local/bin/restic version
+  register: restic_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install the pinned restic release (distro packages are too old)
+  when: restic_version not in (restic_installed.stdout | default(''))
+  block:
+    - name: Download restic
+      ansible.builtin.get_url:
+        url: "{{ backup_restic_url }}"
+        dest: "/tmp/restic_{{ restic_version }}.bz2"
+        mode: "0644"
+
+    - name: Unpack restic
+      ansible.builtin.shell: |
+        set -o pipefail
+        bunzip2 -c /tmp/restic_{{ restic_version }}.bz2 > /usr/local/bin/restic
+        chmod 0755 /usr/local/bin/restic
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+- name: Backup settings and secrets (0600)
+  ansible.builtin.template:
+    src: backup.env.j2
+    dest: /etc/autoops/backup.env
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Install backup systemd units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - autoops-backup.service
+    - autoops-backup.timer
+    - autoops-verify-restore.service
+    - autoops-verify-restore.timer
+  notify: Reload systemd
+
+- name: Apply unit changes before enabling timers
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable backup timers
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - autoops-backup.timer
+    - autoops-verify-restore.timer
+
+- name: Run a backup now
+  ansible.builtin.systemd_service:
+    name: autoops-backup.service
+    state: started
+  when: backup_run_now | bool
+  changed_when: true

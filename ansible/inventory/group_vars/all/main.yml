@@ -1,0 +1,52 @@
+# Global AutoOps settings. Secrets live in vault.yml (ansible-vault encrypted),
+# referenced here as vault_* variables. See docs/DATA.md for how to obtain each value.
+
+# ---------------------------------------------------------------- general
+autoops_root: /opt/autoops
+autoops_server_name: "{{ inventory_hostname }}"
+autoops_timezone: Asia/Tashkent
+autoops_base_domain: example.uz
+autoops_acme_email: "admin@{{ autoops_base_domain }}"
+autoops_grafana_domain: "grafana.{{ autoops_base_domain }}"
+autoops_repo_root: "{{ playbook_dir }}/../.."
+
+# ---------------------------------------------------------------- access
+autoops_admin_user: ops            # human/Ansible user with sudo (SSH key only)
+autoops_admin_keys:
+  - "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'HOME') + '/.ssh/id_ed25519.pub', errors='ignore') | default('', true) }}"
+deploy_user: deploy                # CI/CD user: no sudo, forced command (see roles/app)
+deploy_keys: "{{ vault_deploy_public_keys | default([]) }}"
+ssh_port: 22
+ssh_extra_allow_users: []
+
+# ---------------------------------------------------------------- notifications
+telegram_bot_token: "{{ vault_telegram_bot_token | default('') }}"
+telegram_chat_id: "{{ vault_telegram_chat_id | default('') }}"
+
+# ---------------------------------------------------------------- monitoring
+grafana_admin_user: admin
+grafana_admin_password: "{{ vault_grafana_admin_password }}"
+prometheus_retention: 15d
+prometheus_retention_size: 5GB
+
+# ---------------------------------------------------------------- backups (restic -> S3)
+backup_enabled: true
+restic_version: "0.18.0"
+restic_repository: "{{ vault_restic_repository }}"       # s3:https://<endpoint>/<bucket>/<server>
+restic_password: "{{ vault_restic_password }}"
+s3_access_key_id: "{{ vault_s3_access_key_id }}"
+s3_secret_access_key: "{{ vault_s3_secret_access_key }}"
+backup_time: "03:00"
+backup_keep_daily: 7
+backup_keep_weekly: 4
+backup_keep_monthly: 6
+
+# ---------------------------------------------------------------- registry (private GHCR images)
+registry_host: ghcr.io
+registry_username: "{{ vault_registry_username | default('') }}"
+registry_password: "{{ vault_registry_password | default('') }}"
+
+# ---------------------------------------------------------------- apps (usually set per host)
+autoops_apps: []
+# Per-app secrets come from vault_app_secrets.<app>.{postgres_password,django_secret_key}
+app_secrets: "{{ vault_app_secrets | default({}) }}"

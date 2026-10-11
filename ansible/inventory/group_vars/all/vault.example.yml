@@ -1,0 +1,28 @@
+# Template for the ENCRYPTED secrets file. Create the real one with:
+#   cp ansible/inventory/group_vars/all/vault.example.yml ansible/inventory/group_vars/all/vault.yml
+#   (edit values)  then:  ansible-vault encrypt ansible/inventory/group_vars/all/vault.yml
+# or directly:        ansible-vault create ansible/inventory/group_vars/all/vault.yml
+# Generate passwords: openssl rand -base64 32
+---
+vault_telegram_bot_token: "123456789:AA...from-BotFather"
+vault_telegram_chat_id: "-1001234567890"
+
+vault_grafana_admin_password: "CHANGE-ME-openssl-rand-base64-32"
+
+vault_restic_repository: "s3:https://s3.eu-central-003.backblazeb2.com/autoops-backups/client-shop-1"
+vault_restic_password: "CHANGE-ME-and-store-a-copy-in-your-password-manager"
+vault_s3_access_key_id: "0031234567890ab0000000001"
+vault_s3_secret_access_key: "K003xxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# Public key(s) GitHub Actions uses to SSH in as the restricted deploy user
+vault_deploy_public_keys:
+  - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... github-actions-deploy"
+
+# Only if the app images are private on GHCR (classic PAT with read:packages)
+vault_registry_username: "your-github-user"
+vault_registry_password: "ghp_xxxxxxxxxxxxxxxxxxxx"
+
+vault_app_secrets:
+  shop:
+    postgres_password: "CHANGE-ME-openssl-rand-base64-32"
+    django_secret_key: "CHANGE-ME-openssl-rand-base64-48"

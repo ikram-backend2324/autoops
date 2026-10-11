@@ -1,0 +1,58 @@
+# Rolling maintenance: OS packages (incl. Docker), monitoring images, reboot when required.
+# serial: 1 -> one server at a time; the watchdog is put in maintenance mode meanwhile.
+- name: Rolling OS and Docker update
+  hosts: all
+  become: true
+  serial: 1
+  vars:
+    maintenance_file: /var/lib/autoops/maintenance
+  tasks:
+    - name: Enter maintenance mode (watchdog stops healing)
+      ansible.builtin.file:
+        path: "{{ maintenance_file }}"
+        state: touch
+        mode: "0644"
+      changed_when: false
+
+    - name: Upgrade all packages
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+        autoremove: true
+      register: apt_upgrade
+
+    - name: Check whether a reboot is required
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: Reboot (containers come back via restart policies)
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+        msg: "AutoOps rolling update"
+      when: reboot_required.stat.exists
+
+    - name: Pull newer monitoring images and recreate changed containers
+      ansible.builtin.command:
+        cmd: docker compose up -d --pull always --remove-orphans
+        chdir: "{{ autoops_root }}/stacks/monitoring"
+      register: monitoring_up
+      changed_when: "'Recreate' in monitoring_up.stderr or 'Started' in monitoring_up.stderr"
+
+    - name: Wait until every container is healthy again
+      ansible.builtin.shell: |
+        set -o pipefail
+        docker ps --format '{{ "{{" }}.Names{{ "}}" }} {{ "{{" }}.Status{{ "}}" }}' | grep -E 'unhealthy|starting' || true
+      args:
+        executable: /bin/bash
+      register: unhealthy
+      until: unhealthy.stdout == ""
+      retries: 30
+      delay: 10
+      changed_when: false
+
+  post_tasks:
+    - name: Leave maintenance mode
+      ansible.builtin.file:
+        path: "{{ maintenance_file }}"
+        state: absent

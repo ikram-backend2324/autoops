@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Daily AutoOps backup at {{ backup_time }} {{ autoops_timezone }}
+
+[Timer]
+OnCalendar=*-*-* {{ backup_time }}:00 {{ autoops_timezone }}
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
