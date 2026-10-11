@@ -138,6 +138,7 @@ services:
       - traefik.http.services.${APP_NAME}.loadbalancer.server.port=8000
       - traefik.http.services.${APP_NAME}.loadbalancer.healthcheck.path=/health/live/
       - traefik.http.services.${APP_NAME}.loadbalancer.healthcheck.interval=10s
+      - traefik.http.services.${APP_NAME}.loadbalancer.healthcheck.hostname=${APP_DOMAIN:-localhost}
 
   worker:
     <<: *app-common

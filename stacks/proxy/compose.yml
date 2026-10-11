@@ -4,7 +4,7 @@
 # Static configuration is given as CLI flags so ${ACME_EMAIL} can be interpolated.
 services:
   traefik:
-    image: traefik:v3.5.0
+    image: traefik:v3.7.12
     restart: unless-stopped
     command:
       - --global.checkNewVersion=false
