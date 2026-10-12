@@ -143,7 +143,7 @@ docs/               RUN, DATA, BUSINESS, PRODUCTION, DEMO_SCRIPT, DECISIONS, PRO
 ## Documentation (Russian)
 [RUN](docs/RUN.md) — how to run · [DATA](docs/DATA.md) — what accounts/keys you need ·
 [PRODUCTION](docs/PRODUCTION.md) — runbooks, DR, scaling · [BUSINESS](docs/BUSINESS.md) — pricing & sales ·
-[DECISIONS](docs/DECISIONS.md) — architecture decisions · [PROGRESS](docs/PROGRESS.md) — what is verified.
+[RENDER](docs/RENDER.md) — deploy the demo app to Render (EN) · [DECISIONS](docs/DECISIONS.md) — architecture decisions · [PROGRESS](docs/PROGRESS.md) — what is verified.
 
 ## License
 MIT

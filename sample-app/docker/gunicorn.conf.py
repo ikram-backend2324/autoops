@@ -2,7 +2,8 @@ import os
 
 from prometheus_client import multiprocess
 
-bind = "0.0.0.0:8000"
+# PaaS platforms (Render, Heroku-style) inject the port to listen on via $PORT.
+bind = f"0.0.0.0:{os.environ.get('PORT', '8000')}"
 workers = int(os.environ.get("GUNICORN_WORKERS", "2"))
 threads = int(os.environ.get("GUNICORN_THREADS", "2"))
 timeout = 30

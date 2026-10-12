@@ -1,0 +1,84 @@
+# Deploying to Render (free tier)
+
+## What you get on Render — and what you don't
+
+| Part of AutoOps | On Render free tier? | Why |
+|---|---|---|
+| Sample web app (Django) + HTTPS + custom domain | ✅ yes | Render builds the Dockerfile and gives HTTPS automatically |
+| PostgreSQL | ✅ yes (free plan, limited — see below) | Render managed database |
+| Redis (Render "Key Value") | ✅ yes (free plan) | managed Redis-compatible store |
+| Celery worker | ❌ not free | background workers are a paid instance type; the site works without it |
+| Prometheus, Grafana, Loki, Alertmanager, Telegram alerts | ❌ no | needs Docker Compose, a Docker socket and root — Render does not provide them |
+| Self-healing (autoheal, watchdog), restic backups, chaos demo | ❌ no | same reason; Render runs your container, not your server |
+
+**In short:** Render is good for showing the *application* to someone in 10 minutes.
+AutoOps itself is a *server platform* — for the full product (monitoring, alerts, self-healing,
+backups) you need a VPS, see [RUN.md §5](RUN.md#5-реальный-сервер).
+
+Free-tier limits to know (check render.com/pricing — they change):
+* the web service **sleeps after ~15 minutes** without traffic; the first request then takes ~30–60 s;
+* free PostgreSQL has a small size limit and **expires after a fixed period** (30 days at the time of writing) unless upgraded;
+* free Key Value data is in memory only (lost on restart) — fine for this app, it only checks the connection.
+
+## Step by step
+
+### 0. Prerequisites
+* The project is on GitHub: https://github.com/ikram-backend2324/autoops (the Blueprint file `render.yaml` is in the root).
+* A Render account: https://render.com → **Get Started** → sign up **with GitHub** (easiest — no extra permissions dance later).
+
+### 1. Connect GitHub
+1. Render dashboard → your avatar → **Account Settings → Git Providers** (or you are asked during the first deploy).
+2. Click **Connect GitHub** → install the Render app → choose **Only select repositories** → select `autoops` → **Install**.
+
+### 2. Create the Blueprint
+1. Dashboard → **New +** → **Blueprint**.
+2. Select the repository `ikram-backend2324/autoops`, branch `main`.
+3. **Blueprint Name:** `autoops`. Render reads `render.yaml` and shows three resources:
+   * `autoops-sample` — Web Service (Docker, Free)
+   * `autoops-redis` — Key Value (Free)
+   * `autoops-db` — PostgreSQL (Free)
+4. Click **Apply** (Render may ask for a payment card for verification even on free plans; nothing is charged for free instances).
+
+### 3. Wait for the first build (5–10 minutes)
+* Open **autoops-sample → Events / Logs**. You will see the Docker build, then:
+  `No migrations to apply` / `created 25 demo notes` → `Listening at: http://0.0.0.0:10000`.
+* The status turns **Live** when the health check `/health/` returns 200 (it checks PostgreSQL *and* Redis).
+
+### 4. Open the site
+* URL is shown at the top of the service page, e.g. `https://autoops-sample.onrender.com`
+  (if the name is taken Render adds a suffix like `autoops-sample-x1y2.onrender.com`).
+* Check:
+  * `https://<your-url>/` — home page with demo notes
+  * `https://<your-url>/health/` — `{"status": "ok", "checks": {"database": "ok", "redis": "ok"}}`
+  * `https://<your-url>/metrics` — Prometheus metrics of the app
+
+### 5. (Optional) Custom domain
+1. Service → **Settings → Custom Domains → Add**: `app.yourdomain.uz`.
+2. At your DNS provider add a **CNAME** `app` → `autoops-sample.onrender.com` (Render shows the exact value).
+3. Render issues the HTTPS certificate automatically. Add the domain to the env vars:
+   `DJANGO_ALLOWED_HOSTS` → `.onrender.com,app.yourdomain.uz`, `DJANGO_CSRF_TRUSTED_ORIGINS` → `https://*.onrender.com,https://app.yourdomain.uz`.
+
+### 6. Automatic deploys
+`autoDeploy: true` — every push to `main` rebuilds and redeploys. If the new version fails its health
+check, Render keeps the previous version running (zero-downtime deploy).
+Manual deploy: service → **Manual Deploy → Deploy latest commit**. Rollback: **Events → a previous deploy → Rollback**.
+
+### 7. Optional: uptime alerts without the AutoOps stack
+Render emails you when a deploy fails. For "site is down" alerts on Render you can add a free external
+monitor (UptimeRobot, Better Stack) on `https://<your-url>/health/` with a Telegram integration.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Build fails at `pip install` | re-run *Manual Deploy → Clear build cache & deploy* |
+| `DisallowedHost` / 400 Bad Request | add the host to `DJANGO_ALLOWED_HOSTS` (Environment tab) |
+| Health check fails, logs show `redis: error` | check that `autoops-redis` is *Available*; `REDIS_URL` must come from it |
+| Health check fails, `database: error` | the free database expired or is still creating — Dashboard → autoops-db |
+| First request very slow | the free instance was sleeping — expected on the free plan |
+| Out of memory (512 MB) | set `GUNICORN_WORKERS=1` in Environment |
+
+## Moving from Render to production
+When the client is ready for real production, use the full AutoOps setup on a VPS
+([RUN.md §5](RUN.md#5-реальный-сервер), [PRODUCTION.md](PRODUCTION.md)): ~€5–25/month for a server that also
+gives monitoring, Telegram alerts, self-healing and verified backups, none of which the Render free tier provides.

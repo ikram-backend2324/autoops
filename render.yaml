@@ -1,0 +1,72 @@
+# Render Blueprint: deploys the AutoOps sample web app on Render's free tier.
+#   Render dashboard -> New -> Blueprint -> pick this repository -> Apply.
+# What runs here: Django web (Docker) + PostgreSQL + Key Value (Redis).
+# What does NOT run here: the AutoOps monitoring / self-healing / backup platform.
+# Render is a managed platform (no Docker Compose, no root, no Docker socket); that part
+# needs a VPS - see docs/RENDER.md and docs/RUN.md.
+services:
+  - type: web
+    name: autoops-sample
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerContext: ./sample-app
+    dockerfilePath: ./sample-app/Dockerfile
+    # Free instances have no pre-deploy step, so migrations run right before gunicorn starts.
+    dockerCommand: sh -c "python manage.py migrate --noinput && python manage.py seed_demo && exec /app/docker/entrypoint.sh web"
+    healthCheckPath: /health/
+    autoDeploy: true
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "0"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: .onrender.com,localhost,127.0.0.1
+      - key: DJANGO_CSRF_TRUSTED_ORIGINS
+        value: https://*.onrender.com
+      - key: DJANGO_SECURE_COOKIES
+        value: "1"
+      - key: GUNICORN_WORKERS
+        value: "2"
+      - key: CHAOS_ENABLED
+        value: "0"
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: autoops-db
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: autoops-db
+          property: port
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: autoops-db
+          property: database
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: autoops-db
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: autoops-db
+          property: password
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: autoops-redis
+          property: connectionString
+
+  - type: keyvalue
+    name: autoops-redis
+    plan: free
+    region: frankfurt
+    maxmemoryPolicy: noeviction
+    ipAllowList: []          # internal connections from Render services only
+
+databases:
+  - name: autoops-db
+    plan: free
+    region: frankfurt
+    databaseName: app
+    user: app
