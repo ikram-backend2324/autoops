@@ -10,7 +10,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # include the workflow name: when Deploy calls this file it gets its own group
+  # instead of cancelling (or being cancelled by) the standalone CI run
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

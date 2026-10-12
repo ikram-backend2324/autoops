@@ -24,4 +24,4 @@ jobs:
           cache-from: type=gha,scope=tools
           cache-to: type=gha,scope=tools,mode=max
       - name: Run linters
-        run: docker run --rm -v "$PWD:/work" -w /work autoops/tools:ci scripts/dev/lint.sh
+        run: docker run --rm -v "$PWD:/work" -w /work autoops/tools:ci bash scripts/dev/lint.sh
