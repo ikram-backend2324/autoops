@@ -50,6 +50,14 @@ def human_age(seconds: float | None) -> str:
     return f"{seconds / 86400:.0f} дн назад"
 
 
+def human_size(num: float) -> str:
+    for unit in ("Б", "КБ", "МБ", "ГБ"):
+        if num < 1024:
+            return f"{num:.0f} {unit}" if unit == "Б" else f"{num:.1f} {unit}"
+        num /= 1024
+    return f"{num:.1f} ТБ"
+
+
 def relay_events() -> list[dict]:
     try:
         with urllib.request.urlopen(f"{RELAY}/events?since={time.time() - WEEK}&limit=2000", timeout=10) as resp:
@@ -72,8 +80,14 @@ def build_report() -> str:
         lines.append("  нет данных blackbox")
 
     events = relay_events()
-    alerts = [e for e in events if e.get("kind") == "alert" and e.get("status") == "firing"
-              and e.get("severity") in ("critical", "warning")]
+    # Alertmanager re-sends a firing group every group_interval: one incident = one
+    # (alertname, labels, startsAt) combination.
+    incidents = {}
+    for e in events:
+        if e.get("kind") == "alert" and e.get("status") == "firing" and e.get("severity") in ("critical", "warning"):
+            key = (e["alertname"], json.dumps(e.get("labels", {}), sort_keys=True), e.get("startsAt"))
+            incidents[key] = e
+    alerts = list(incidents.values())
     by_name = Counter(e["alertname"] for e in alerts)
     heals = [e for e in events if e.get("kind") == "notify" and e.get("source") in ("watchdog", "autoheal")]
     lines += ["", f"🚨 Инцидентов (critical/warning): {len(alerts)}"]
@@ -84,7 +98,7 @@ def build_report() -> str:
     verify = prom("autoops_restore_verify_success")
     size = scalar("max(autoops_backup_size_bytes)")
     lines += ["", f"💾 Последний бэкап: {human_age(backup_age)}"
-              + (f", {size / 1024 / 1024:.1f} МБ" if size else "")]
+              + (f", {human_size(size)}" if size else "")]
     for item in verify:
         ok = item["value"][1] == "1"
         lines.append(f"  {'✅' if ok else '❌'} проверка восстановления {item['metric'].get('app', '')}")

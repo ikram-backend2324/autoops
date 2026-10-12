@@ -12,7 +12,9 @@ import urllib.request
 
 from playwright.sync_api import sync_playwright
 
-GRAFANA = os.environ.get("GRAFANA_URL", "http://grafana:3000")
+# The browser runs in Grafana's network namespace (see screenshots.sh), so localhost:3000
+# matches Grafana's root_url and all its asset URLs resolve.
+GRAFANA = os.environ.get("GRAFANA_URL", "http://localhost:3000")
 USER = os.environ.get("GRAFANA_USER", "admin")
 PASSWORD = os.environ.get("GRAFANA_PASSWORD", "autoops")
 OUT = pathlib.Path(os.environ.get("OUT_DIR", "/work/docs/screenshots"))
@@ -52,9 +54,7 @@ def grafana_ready() -> None:
 
 
 def telegram_page(messages: list[str]) -> str:
-    bubbles = []
-    for i, text in enumerate(messages):
-        bubbles.append(f'<div class="msg">{text.strip()}<span class="time">03:1{i}</span></div>')
+    bubbles = [f'<div class="msg">{text.strip()}</div>' for text in messages]
     return TELEGRAM_HTML.format(messages="\n".join(bubbles))
 
 
@@ -64,17 +64,35 @@ def main() -> None:
     with sync_playwright() as p:
         browser = p.chromium.launch()
         ctx = browser.new_context(
-            viewport={"width": 1600, "height": 1000},
+            viewport={"width": 1600, "height": 2200},  # tall: Grafana lazy-loads panels below the fold
             http_credentials={"username": USER, "password": PASSWORD},
             device_scale_factor=1,
             color_scheme="dark",
+            locale="en-US",  # container default "en-US@posix" crashes Grafana's Intl code
+            timezone_id="Asia/Tashkent",
         )
         page = ctx.new_page()
+        page.goto(f"{GRAFANA}/login", wait_until="load")
+        page.fill('input[name="user"]', USER)
+        page.fill('input[name="password"]', PASSWORD)
+        page.click('button[type="submit"]')
+        page.wait_for_url(lambda url: "/login" not in url, timeout=30_000)
         for name, uid in DASHBOARDS.items():
             url = f"{GRAFANA}/d/{uid}?orgId=1&from={RANGE}&to=now&kiosk&theme=dark"
-            page.goto(url, wait_until="networkidle", timeout=90_000)
-            time.sleep(6)  # let panels finish querying/rendering
-            page.screenshot(path=str(OUT / f"{name}.png"), full_page=True)
+            page.goto(url, wait_until="load", timeout=90_000)
+            try:
+                page.wait_for_load_state("networkidle", timeout=30_000)
+            except Exception:  # noqa: BLE001 - live dashboards keep polling; render anyway
+                pass
+            # Panels mount asynchronously; wait until they exist before taking the picture.
+            page.wait_for_selector("section[data-testid^='data-testid Panel header']", timeout=60_000)
+            time.sleep(8)  # let panels finish querying/rendering
+            # Crop to the panels: the tall viewport would otherwise leave empty space below.
+            bottom = page.evaluate(
+                "Math.max(...[...document.querySelectorAll(\"section[data-testid^='data-testid Panel header']\")]"
+                ".map(e => e.getBoundingClientRect().bottom + window.scrollY))"
+            )
+            page.screenshot(path=str(OUT / f"{name}.png"), clip={"x": 0, "y": 0, "width": 1600, "height": int(bottom) + 16})
             print("saved", OUT / f"{name}.png")
 
         rendered = [os.environ[k] for k in sorted(os.environ) if k.startswith("TELEGRAM_MSG_")]

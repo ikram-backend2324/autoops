@@ -32,7 +32,7 @@ JSON
 watchdog='🟠 🔧 Автовосстановление: стек shop запущен не полностью (остановлены: shop-postgres-1).
 Выполнено: docker compose up -d. Результат: ✅ OK
 🖥 Сервер: <code>client-shop-1</code>'
-docker run --rm --network autoops -v "$host_root:/work" -w /work \
+docker run --rm --network container:autoops-grafana-1 -v "$host_root:/work" -w /work \
   -e GRAFANA_PASSWORD="$pass" -e TELEGRAM_MSG_1="$firing" -e TELEGRAM_MSG_2="$watchdog" -e TELEGRAM_MSG_3="$resolved" -e RANGE="${RANGE:-now-1h}" \
   mcr.microsoft.com/playwright/python:v1.55.0-noble \
   sh -c 'pip install -q playwright==1.55.0 >/dev/null 2>&1; python3 scripts/dev/screenshots.py'

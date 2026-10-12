@@ -85,7 +85,8 @@ def table(lay, title, exprs, w=24, h=8, unit="none"):
     return {
         "id": lay.new_id(), "type": "table", "title": title, "datasource": PROM, "gridPos": lay.place(w, h),
         "targets": tgts, "fieldConfig": {"defaults": {"unit": unit}, "overrides": []},
-        "transformations": [{"id": "merge"}, {"id": "organize", "options": {"excludeByName": {"Time": True}}}],
+        "transformations": [{"id": "merge"},
+                            {"id": "organize", "options": {"excludeByName": {"Time": True, "Value": True}}}],
     }
 
 
@@ -157,7 +158,8 @@ def server_overview():
            "Bps"),
         ts(lay, "Диск I/O", [('sum(rate(node_disk_read_bytes_total[2m]))', "чтение"),
                              ('sum(rate(node_disk_written_bytes_total[2m]))', "запись")], "Bps"),
-        table(lay, "Сейчас срабатывают", ['ALERTS{alertstate="firing"}']),
+        table(lay, "Сейчас срабатывают",
+              ['sum by (alertname, severity, app, name, instance) (ALERTS{alertstate="firing"})'], h=7),
     ]
     return dashboard("autoops-server", "AutoOps · Обзор сервера", p, ["server"])
 
@@ -271,7 +273,7 @@ def backups():
         stat(lay, "Проверка восстановления", "min(autoops_restore_verify_success)", w=6,
              mappings=[{"type": "value", "options": {"0": {"text": "ПРОВАЛ", "color": "red"}, "1": {"text": "OK", "color": "green"}}}]),
         stat(lay, "Снапшотов в репозитории", "max(autoops_backup_snapshots_total)", w=6),
-        ts(lay, "Размер данных бэкапа", [("autoops_backup_size_bytes", "{{app}}")], "bytes"),
+        ts(lay, "Размер данных бэкапа", [("autoops_backup_size_bytes", "размер")], "bytes"),
         ts(lay, "Длительность бэкапа", [("autoops_backup_duration_seconds", "бэкап"),
                                         ("autoops_restore_verify_duration_seconds", "проверка {{app}}")], "s"),
         ts(lay, "Строк восстановлено при проверке", [("autoops_restore_verify_rows", "{{app}} {{table}}")]),

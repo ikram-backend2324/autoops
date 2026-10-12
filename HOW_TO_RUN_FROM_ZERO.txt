@@ -51,7 +51,8 @@ A. LOCAL DEMO (your laptop, no server needed)
 7) Try it:
       make backup            make verify-restore      make restore APP=sample
       make chaos             (5 failure scenarios, report -> docs/chaos-report.md)
-      make test              make lint                make molecule
+      make test              make lint                make molecule       make test-deploy
+      make screenshots       (Grafana screenshots -> docs/screenshots)
 8) Stop:  make local-down    (keep data)   |   make local-clean (delete data)
 
 Without make (Git Bash on Windows), the same thing:

@@ -76,12 +76,15 @@
   ansible.builtin.command:
     cmd: "{{ autoops_root }}/bin/autoops-compose {{ app.name }} pull --quiet --ignore-buildable"
   changed_when: false
+  failed_when: false   # e.g. registry hiccup with a cached image; the health gate decides
 
 - name: "Start / update - {{ app.name }}"
   ansible.builtin.command:
     cmd: "{{ autoops_root }}/bin/autoops-compose {{ app.name }} up -d --remove-orphans"
   register: app_up
   changed_when: "'Started' in app_up.stderr or 'Recreated' in app_up.stderr or 'Created' in app_up.stderr"
+  # A failed `up` (unknown tag, failing migration) is handled by the health gate + rollback below.
+  failed_when: false
 
 - name: "Wait until web is healthy - {{ app.name }}"
   ansible.builtin.command:

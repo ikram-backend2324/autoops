@@ -781,7 +781,7 @@
         "x": 0,
         "y": 28,
         "w": 24,
-        "h": 8
+        "h": 7
       },
       "targets": [
         {
@@ -789,7 +789,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "ALERTS{alertstate=\"firing\"}",
+          "expr": "sum by (alertname, severity, app, name, instance) (ALERTS{alertstate=\"firing\"})",
           "legendFormat": "",
           "refId": "A",
           "format": "table",
@@ -810,7 +810,8 @@
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true
+              "Time": true,
+              "Value": true
             }
           }
         }

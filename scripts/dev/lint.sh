@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Every static check of the repository. Runs inside the tools image (make lint / CI).
+# shellcheck disable=SC2016  # the bash -c snippets are single-quoted on purpose
 set -uo pipefail
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../.." || exit 1
 export ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg" ANSIBLE_ROLES_PATH="$PWD/ansible/roles"
 failed=()
 run() {

@@ -144,6 +144,12 @@ test-rules: ## promtool unit tests for alert rules
 	docker run --rm -v $(ROOT)/stacks/monitoring/prometheus:/p -w /p --entrypoint promtool \
 	  prom/prometheus:v3.5.0 test rules tests/rules_test.yml
 
+.PHONY: test-deploy
+test-deploy: $(TOOLS_DEP) ## Integration test of CI deploy: success, broken release -> rollback, input validation
+	scripts/dev/test_ci_deploy_images.sh
+	docker run --rm -v $(ROOT):/work -w /work -v /var/run/docker.sock:/var/run/docker.sock \
+	  $(TOOLS_IMAGE) scripts/dev/test_ci_deploy.sh
+
 .PHONY: molecule
 molecule: $(TOOLS_DEP) ## Molecule converge + idempotence for all roles (ROLE=base for one)
 	$(TOOLS) scripts/dev/molecule.sh $(ROLE)

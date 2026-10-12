@@ -22,8 +22,8 @@ previous=$(sed -n 's/^APP_PREVIOUS_TAG=//p' "$dir/tag.env" 2>/dev/null || true)
 
 switch_to() {  # switch_to NEW_TAG PREVIOUS_TAG
   printf 'APP_TAG=%s\nAPP_PREVIOUS_TAG=%s\n' "$1" "$2" > "$dir/tag.env"
-  "$compose" "$app" pull --quiet web worker migrate
-  "$compose" "$app" up -d --remove-orphans
+  # CI tags (sha-xxxxxxx) are immutable, so only missing images are pulled.
+  "$compose" "$app" up -d --remove-orphans --pull "${CI_PULL_POLICY:-missing}"
 }
 
 wait_healthy() {
@@ -40,8 +40,8 @@ case "$action" in
   deploy)
     [[ "$tag" =~ ^[A-Za-z0-9._-]{1,128}$ ]] || { echo "invalid tag" >&2; exit 2; }
     echo "deploying $app:$tag (current: ${current:-none})"
-    switch_to "$tag" "$current"
-    if wait_healthy; then
+    # Inside `if`: a failed pull/up (e.g. unknown tag) also leads to the rollback below.
+    if switch_to "$tag" "$current" && wait_healthy; then
       echo "RESULT=ok TAG=$tag PREVIOUS=${current:-none}"
       exit 0
     fi
@@ -49,8 +49,11 @@ case "$action" in
     "$compose" "$app" logs --tail 50 web >&2 || true
     if [[ -n "$current" && "$current" != "$tag" ]]; then
       echo "rolling back to $current" >&2
-      switch_to "$current" ""
-      wait_healthy && echo "RESULT=rolled_back TAG=$current FAILED=$tag" || echo "RESULT=rollback_unhealthy TAG=$current FAILED=$tag"
+      if switch_to "$current" "" && wait_healthy; then
+        echo "RESULT=rolled_back TAG=$current FAILED=$tag"
+      else
+        echo "RESULT=rollback_unhealthy TAG=$current FAILED=$tag"
+      fi
     else
       echo "RESULT=failed_no_previous FAILED=$tag"
     fi
@@ -59,8 +62,12 @@ case "$action" in
   rollback)
     [[ -n "$previous" ]] || { echo "no previous tag recorded" >&2; exit 1; }
     echo "rolling back $app: $current -> $previous"
-    switch_to "$previous" ""
-    wait_healthy && echo "RESULT=ok TAG=$previous" || { echo "RESULT=unhealthy TAG=$previous"; exit 1; }
+    if switch_to "$previous" "" && wait_healthy; then
+      echo "RESULT=ok TAG=$previous"
+    else
+      echo "RESULT=unhealthy TAG=$previous"
+      exit 1
+    fi
     ;;
   status)
     echo "app=$app current=${current:-none} previous=${previous:-none}"

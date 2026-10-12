@@ -312,7 +312,7 @@
             "uid": "prometheus"
           },
           "expr": "autoops_backup_size_bytes",
-          "legendFormat": "{{app}}",
+          "legendFormat": "размер",
           "refId": "A"
         }
       ],

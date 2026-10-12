@@ -6,6 +6,7 @@
 
 ![chaos](https://img.shields.io/badge/chaos%20scenarios-5%2F5%20passed-brightgreen)
 ![rules](https://img.shields.io/badge/alert%20rule%20tests-9%20passing-brightgreen)
+![deploy](https://img.shields.io/badge/CI%20deploy%20%2B%20rollback%20tests-11%20passing-brightgreen)
 ![molecule](https://img.shields.io/badge/molecule-converge%20%2B%20idempotence-blue)
 
 ## The problem
@@ -85,20 +86,24 @@ flowchart LR
 ## Chaos results (laptop run, `make chaos-auto`)
 | Scenario | Detected | Recovered | Alert |
 |---|---|---|---|
-| 1. web process killed (SIGKILL) | 1 s | 8 s | ContainerRestarted |
-| 2. web hung (healthcheck failing) | 27 s | 36 s | autoheal → Telegram |
-| 3. PostgreSQL stopped | 5 s | 73 s | PostgresDown + watchdog |
-| 4. Disk filled to 92 % | 3 s | 20 s | watchdog "freed 276 MB" |
-| 5. CPU saturated | 98 s | after load stops | HighCPU |
+| 1. web process killed (SIGKILL) | 4 s | 8 s | ContainerRestarted |
+| 2. web hung (healthcheck failing) | 32 s | 44 s | autoheal → Telegram |
+| 3. PostgreSQL stopped | 5 s | 80 s | PostgresDown + watchdog |
+| 4. Disk filled to 92 % | 14 s | 17 s | watchdog "freed 276 MB" |
+| 5. CPU saturated (all 16 cores) | 93 s | 228 s (load stops at 240 s) | HighCPU |
 
 Full report: [docs/chaos-report.md](docs/chaos-report.md). Demo video script: [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md).
 
 ## Screenshots
+Taken from the laptop demo right after `make chaos-auto` (the CPU spike and the 92 % disk fill are visible).
+
 | Server overview | Containers |
 |---|---|
 | ![server](docs/screenshots/server-overview.png) | ![containers](docs/screenshots/containers.png) |
 | **Application** | **Backups** |
 | ![app](docs/screenshots/app.png) | ![backups](docs/screenshots/backups.png) |
+| **PostgreSQL & Redis** | **Telegram alerts (real template)** |
+| ![postgres](docs/screenshots/postgres.png) | ![telegram](docs/screenshots/telegram-alerts.png) |
 
 ## Quick start (laptop, Docker only)
 ```bash
