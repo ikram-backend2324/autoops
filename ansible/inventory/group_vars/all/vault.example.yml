@@ -26,3 +26,4 @@ vault_app_secrets:
   shop:
     postgres_password: "CHANGE-ME-openssl-rand-base64-32"
     django_secret_key: "CHANGE-ME-openssl-rand-base64-48"
+    admin_password: "CHANGE-ME-openssl-rand-base64-24"   # Django /admin/ user "admin" (optional)

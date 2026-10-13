@@ -4,7 +4,8 @@ from prometheus_client import multiprocess
 
 # PaaS platforms (Render, Heroku-style) inject the port to listen on via $PORT.
 bind = f"0.0.0.0:{os.environ.get('PORT', '8000')}"
-workers = int(os.environ.get("GUNICORN_WORKERS", "2"))
+# GUNICORN_WORKERS wins; WEB_CONCURRENCY is what Render/Heroku set from the instance size.
+workers = int(os.environ.get("GUNICORN_WORKERS") or os.environ.get("WEB_CONCURRENCY") or "2")
 threads = int(os.environ.get("GUNICORN_THREADS", "2"))
 timeout = 30
 graceful_timeout = 20

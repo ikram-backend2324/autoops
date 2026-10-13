@@ -68,6 +68,37 @@ def test_heartbeat_task_records_row():
     assert Heartbeat.objects.count() == 1
 
 
+@pytest.mark.django_db
+def test_ensure_superuser_creates_once(monkeypatch):
+    from django.contrib.auth import get_user_model
+    from django.core.management import call_command
+
+    monkeypatch.setenv("DJANGO_SUPERUSER_USERNAME", "admin")
+    monkeypatch.setenv("DJANGO_SUPERUSER_EMAIL", "admin@example.com")
+    monkeypatch.setenv("DJANGO_SUPERUSER_PASSWORD", "first-password")
+    call_command("ensure_superuser")
+    user = get_user_model().objects.get(username="admin")
+    assert user.is_superuser and user.check_password("first-password")
+
+    # a second start must not reset a password that was changed in /admin/
+    user.set_password("changed-later")
+    user.save()
+    monkeypatch.setenv("DJANGO_SUPERUSER_PASSWORD", "first-password")
+    call_command("ensure_superuser")
+    assert get_user_model().objects.get(username="admin").check_password("changed-later")
+
+
+@pytest.mark.django_db
+def test_ensure_superuser_skips_without_env(monkeypatch):
+    from django.contrib.auth import get_user_model
+    from django.core.management import call_command
+
+    monkeypatch.delenv("DJANGO_SUPERUSER_USERNAME", raising=False)
+    monkeypatch.delenv("DJANGO_SUPERUSER_PASSWORD", raising=False)
+    call_command("ensure_superuser")
+    assert not get_user_model().objects.exists()
+
+
 def test_live_ignores_dependencies(client, tmp_path):
     assert client.get("/health/live/").status_code == 200
     flag = tmp_path / "unhealthy"
